@@ -1,4 +1,4 @@
-import { EVENT_CATEGORIES } from "../constants/eventCategories";
+import { EVENT_CATEGORIES, EVENT_CATEGORY_META } from "../constants/eventCategories";
 import type { CalendarEvent } from "../services/eventsService";
 import { DayCell } from "./DayCell";
 
@@ -25,6 +25,7 @@ type CalendarProps = {
   events: CalendarEvent[];
   onPrevMonth: () => void;
   onNextMonth: () => void;
+  onMonthChange: (month: number) => void;
   onYearChange: (year: number) => void;
 };
 
@@ -47,7 +48,9 @@ const buildCalendarDays = (year: number, month: number) => {
 const getEventsForDay = (events: CalendarEvent[], date: Date | null) => {
   if (!date) return [];
   const target = date.toISOString().split("T")[0];
-  return events.filter((event) => event.horaInicio.startsWith(target));
+  return events.filter((event) =>
+    (event.fecha ?? event.horaInicio).startsWith(target)
+  );
 };
 
 export const Calendar = ({
@@ -56,6 +59,7 @@ export const Calendar = ({
   events,
   onPrevMonth,
   onNextMonth,
+  onMonthChange,
   onYearChange
 }: CalendarProps) => {
   const days = buildCalendarDays(currentYear, currentMonth);
@@ -91,6 +95,21 @@ export const Calendar = ({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-4">
+          <label className="text-sm font-medium text-slate-500" htmlFor="month-select">
+            Mes
+          </label>
+          <select
+            id="month-select"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition focus:border-indigo-400 focus:outline-none"
+            value={currentMonth}
+            onChange={(event) => onMonthChange(Number(event.target.value))}
+          >
+            {monthNames.map((month, index) => (
+              <option key={month} value={index}>
+                {month}
+              </option>
+            ))}
+          </select>
           <label className="text-sm font-medium text-slate-500" htmlFor="year-select">
             Año
           </label>
@@ -115,17 +134,9 @@ export const Calendar = ({
                 className="flex items-center gap-2 text-xs text-slate-500"
               >
                 <span
-                  className={`h-2 w-2 rounded-full ${
-                    category === "CATEGORIA_1"
-                      ? "bg-category-1"
-                      : category === "CATEGORIA_2"
-                        ? "bg-category-2"
-                        : category === "CATEGORIA_3"
-                          ? "bg-category-3"
-                          : "bg-category-4"
-                  }`}
+                  className={`h-2 w-2 rounded-full ${EVENT_CATEGORY_META[category].dotClass}`}
                 />
-                {category}
+                {EVENT_CATEGORY_META[category].label}
               </span>
             ))}
           </div>

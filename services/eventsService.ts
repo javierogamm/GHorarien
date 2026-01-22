@@ -1,14 +1,16 @@
-import { Models, Query } from "appwrite";
+import { ID, Models, Query } from "appwrite";
 import type { EventCategory } from "../constants/eventCategories";
 import { appwriteConfig, databases, ensureAppwriteConfig } from "./appwriteClient";
 
 export type CalendarEvent = Models.Document & {
   eventType: EventCategory;
   user: string;
+  nombre?: string;
+  fecha?: string;
   horaInicio: string;
   horaFin: string;
   duration: number;
-  notas: string;
+  notas?: string;
 };
 
 export const fetchEventsForUserAndRange = async (
@@ -22,10 +24,53 @@ export const fetchEventsForUserAndRange = async (
     appwriteConfig.eventsCollectionId,
     [
       Query.equal("user", username),
-      Query.greaterThanEqual("horaInicio", startISO),
-      Query.lessThanEqual("horaInicio", endISO)
+      Query.greaterThanEqual("fecha", startISO),
+      Query.lessThanEqual("fecha", endISO)
     ]
   );
 
   return response.documents;
+};
+
+type CreateEventsInput = {
+  nombre: string;
+  eventType: EventCategory;
+  attendees: string[];
+  fecha: string;
+  horaInicio: string;
+  horaFin: string;
+  duration: number;
+  notas?: string;
+};
+
+export const createEventsForAttendees = async ({
+  nombre,
+  eventType,
+  attendees,
+  fecha,
+  horaInicio,
+  horaFin,
+  duration,
+  notas
+}: CreateEventsInput): Promise<CalendarEvent[]> => {
+  ensureAppwriteConfig();
+  const payloads = attendees.map((attendee) =>
+    databases.createDocument<CalendarEvent>(
+      appwriteConfig.databaseId,
+      appwriteConfig.eventsCollectionId,
+      ID.unique(),
+      {
+        nombre,
+        eventType,
+        user: attendee,
+        fecha,
+        horaInicio,
+        horaFin,
+        duration,
+        notas: notas ?? ""
+      }
+    )
+  );
+
+  return Promise.all(payloads);
 };

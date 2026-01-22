@@ -1,10 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar } from "../../components/Calendar";
 import {
+  type EventCategory,
+  EVENT_CATEGORIES,
+  EVENT_CATEGORY_META
+} from "../../constants/eventCategories";
+import {
   type CalendarEvent,
+  createEventsForAttendees,
   fetchEventsForUserAndRange
 } from "../../services/eventsService";
 
@@ -25,6 +31,20 @@ export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [eventName, setEventName] = useState("");
+  const [eventType, setEventType] = useState<EventCategory>(EVENT_CATEGORIES[0]);
+  const [attendees, setAttendees] = useState("");
+  const [eventDate, setEventDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      .toISOString()
+      .split("T")[0];
+  });
+  const [formStatus, setFormStatus] = useState({
+    loading: false,
+    error: "",
+    success: ""
+  });
 
   useEffect(() => {
     const savedUser = window.localStorage.getItem(SESSION_KEY);
@@ -35,23 +55,24 @@ export default function CalendarPage() {
     setUsername(savedUser);
   }, [router]);
 
+  const loadEvents = useCallback(async () => {
+    if (!username) return;
+    setLoading(true);
+    setError("");
+    try {
+      const { startISO, endISO } = getMonthRangeISO(currentYear, currentMonth);
+      const data = await fetchEventsForUserAndRange(username, startISO, endISO);
+      setEvents(data);
+    } catch (err) {
+      setError("No se pudieron cargar los eventos.");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentMonth, currentYear, username]);
+
   useEffect(() => {
-    const loadEvents = async () => {
-      if (!username) return;
-      setLoading(true);
-      setError("");
-      try {
-        const { startISO, endISO } = getMonthRangeISO(currentYear, currentMonth);
-        const data = await fetchEventsForUserAndRange(username, startISO, endISO);
-        setEvents(data);
-      } catch (err) {
-        setError("No se pudieron cargar los eventos.");
-      } finally {
-        setLoading(false);
-      }
-    };
     loadEvents();
-  }, [username, currentMonth, currentYear]);
+  }, [loadEvents]);
 
   const handlePrevMonth = () => {
     if (currentMonth === 0) {
@@ -74,6 +95,93 @@ export default function CalendarPage() {
   const handleLogout = () => {
     window.localStorage.removeItem(SESSION_KEY);
     router.push("/login");
+  };
+
+  const buildEventDateTime = (time: string, baseDate: string) => {
+    const [hour, minute] = time.split(":").map(Number);
+    const [year, month, day] = baseDate.split("-").map(Number);
+    return new Date(year, month - 1, day, hour, minute, 0, 0);
+  };
+
+  const parseAttendees = (value: string) =>
+    Array.from(
+      new Set(
+        value
+          .split(/[\n,]+/)
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      )
+    );
+
+  const handleCreateEvent = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedName = eventName.trim();
+    const trimmedDate = eventDate.trim();
+    const attendeeList = parseAttendees(attendees);
+
+    if (!trimmedName) {
+      setFormStatus({
+        loading: false,
+        error: "Indica el nombre del evento.",
+        success: ""
+      });
+      return;
+    }
+
+    if (!trimmedDate) {
+      setFormStatus({
+        loading: false,
+        error: "Indica la fecha del evento.",
+        success: ""
+      });
+      return;
+    }
+
+    if (attendeeList.length === 0) {
+      setFormStatus({
+        loading: false,
+        error: "Agrega al menos un asistente.",
+        success: ""
+      });
+      return;
+    }
+
+    setFormStatus({ loading: true, error: "", success: "" });
+    try {
+      const meta = EVENT_CATEGORY_META[eventType];
+      const startDate = buildEventDateTime(meta.startTime, trimmedDate);
+      const endDate = buildEventDateTime(meta.endTime, trimmedDate);
+      const fechaISO = new Date(`${trimmedDate}T00:00:00`).toISOString();
+      const duration = Math.round(
+        (endDate.getTime() - startDate.getTime()) / 60000
+      );
+
+      await createEventsForAttendees({
+        nombre: trimmedName,
+        eventType,
+        attendees: attendeeList,
+        fecha: fechaISO,
+        horaInicio: startDate.toISOString(),
+        horaFin: endDate.toISOString(),
+        duration,
+        notas: ""
+      });
+
+      setEventName("");
+      setAttendees("");
+      setFormStatus({
+        loading: false,
+        error: "",
+        success: "Evento creado correctamente."
+      });
+      await loadEvents();
+    } catch (err) {
+      setFormStatus({
+        loading: false,
+        error: "No se pudo crear el evento.",
+        success: ""
+      });
+    }
   };
 
   return (
@@ -103,6 +211,81 @@ export default function CalendarPage() {
           </div>
         ) : null}
 
+        <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-soft backdrop-blur">
+          <h3 className="text-lg font-semibold text-slate-900">Crear evento</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Crea un evento nuevo y asigna asistentes. Cada asistente generará una
+            fila en la tabla.
+          </p>
+          <form className="mt-6 flex flex-col gap-4" onSubmit={handleCreateEvent}>
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-600">
+                Nombre del evento
+                <input
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-400 focus:outline-none"
+                  type="text"
+                  value={eventName}
+                  onChange={(event) => setEventName(event.target.value)}
+                  placeholder="Ej: Taller de creatividad"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-600">
+                Fecha
+                <input
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-400 focus:outline-none"
+                  type="date"
+                  value={eventDate}
+                  onChange={(event) => setEventDate(event.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-600">
+                Tipo de evento
+                <select
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm focus:border-indigo-400 focus:outline-none"
+                  value={eventType}
+                  onChange={(event) =>
+                    setEventType(event.target.value as EventCategory)
+                  }
+                >
+                  {EVENT_CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {EVENT_CATEGORY_META[category].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label className="flex flex-col gap-2 text-sm font-medium text-slate-600">
+              Asistentes (separados por coma o salto de línea)
+              <textarea
+                className="min-h-[120px] rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:border-indigo-400 focus:outline-none"
+                value={attendees}
+                onChange={(event) => setAttendees(event.target.value)}
+                placeholder="ej: ana, carlos, maria"
+              />
+            </label>
+            {formStatus.error ? (
+              <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-600">
+                {formStatus.error}
+              </p>
+            ) : null}
+            {formStatus.success ? (
+              <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-600">
+                {formStatus.success}
+              </p>
+            ) : null}
+            <div>
+              <button
+                type="submit"
+                disabled={formStatus.loading}
+                className="rounded-full border border-indigo-200 bg-indigo-500 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-indigo-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-300"
+              >
+                {formStatus.loading ? "Creando..." : "Crear evento"}
+              </button>
+            </div>
+          </form>
+        </section>
+
         {loading ? (
           <div className="flex items-center justify-center rounded-3xl border border-white/70 bg-white/70 px-6 py-16 text-sm font-semibold text-slate-500 shadow-soft">
             Cargando eventos...
@@ -114,6 +297,7 @@ export default function CalendarPage() {
             events={events}
             onPrevMonth={handlePrevMonth}
             onNextMonth={handleNextMonth}
+            onMonthChange={setCurrentMonth}
             onYearChange={setCurrentYear}
           />
         )}
