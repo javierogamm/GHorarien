@@ -5,3 +5,7 @@
 - Implementación de login custom contra Appwrite (colección `users`).
 - Vista de calendario mensual con eventos por usuario desde Appwrite.
 - Documentación de despliegue y configuración.
+
+## v0.1.1
+- Ajuste de la rejilla del calendario a 7 columnas fijas con scroll horizontal en pantallas pequeñas.
+- Actualización de Next.js a versión con parche de seguridad.

@@ -132,31 +132,35 @@ export const Calendar = ({
         </div>
       </header>
 
-      <div className="grid grid-cols-7 gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {weekDays.map((day) => (
-          <div key={day} className="px-3">
-            {day}
+      <div className="overflow-x-auto pb-2">
+        <div className="min-w-[900px]">
+          <div className="grid grid-cols-7 gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {weekDays.map((day) => (
+              <div key={day} className="px-3">
+                {day}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        {days.map((date, index) => {
-          const isToday =
-            date &&
-            date.getDate() === today.getDate() &&
-            date.getMonth() === today.getMonth() &&
-            date.getFullYear() === today.getFullYear();
+          <div className="mt-4 grid grid-cols-7 gap-4">
+            {days.map((date, index) => {
+              const isToday =
+                date &&
+                date.getDate() === today.getDate() &&
+                date.getMonth() === today.getMonth() &&
+                date.getFullYear() === today.getFullYear();
 
-          return (
-            <DayCell
-              key={`${currentYear}-${currentMonth}-${index}`}
-              date={date}
-              isToday={Boolean(isToday)}
-              events={getEventsForDay(events, date)}
-            />
-          );
-        })}
+              return (
+                <DayCell
+                  key={`${currentYear}-${currentMonth}-${index}`}
+                  date={date}
+                  isToday={Boolean(isToday)}
+                  events={getEventsForDay(events, date)}
+                />
+              );
+            })}
+          </div>
+        </div>
       </div>
     </section>
   );
