@@ -1,5 +1,8 @@
 # Log de cambios
 
+## v0.2.11
+- Corrección del tipado del formulario de edición para evitar errores de compilación.
+
 ## v0.2.10
 - Ajuste del cliente Appwrite para evitar errores de despliegue al cargar sin variables de entorno.
 - Indicador visual por color en la columna de tipo de evento dentro de la tabla.

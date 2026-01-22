@@ -58,7 +58,18 @@ export default function CalendarPage() {
   );
   const [establishments, setEstablishments] = useState<string[]>([]);
   const [establishmentsError, setEstablishmentsError] = useState("");
-  const [editForm, setEditForm] = useState({
+  type EditFormState = {
+    nombre: string;
+    eventType: EventCategory;
+    fecha: string;
+    horaInicio: string;
+    horaFin: string;
+    attendees: string;
+    notas: string;
+    establecimiento: string;
+  };
+
+  const [editForm, setEditForm] = useState<EditFormState>({
     nombre: "",
     eventType: EVENT_CATEGORIES[0],
     fecha: "",
