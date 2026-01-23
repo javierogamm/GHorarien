@@ -1,5 +1,8 @@
 # Log de cambios
 
+## v0.2.12
+- Colores fijos por `eventType` aplicados a la banda visible de cada evento en el calendario mensual.
+
 ## v0.2.11
 - Corrección del tipado del formulario de edición para evitar errores de compilación.
 
