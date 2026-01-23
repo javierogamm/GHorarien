@@ -1,5 +1,8 @@
 # Log de cambios
 
+## v0.2.20
+- Corrección del acordeón "Mis eventos" para usar `open` y evitar errores de compilación.
+
 ## v0.2.19
 - Vista laboral activada por defecto con semana laboral en una sola línea en la vista semanal.
 - Nueva vista "Mis eventos" en formato acordeón por año/mes con detalles desplegables.

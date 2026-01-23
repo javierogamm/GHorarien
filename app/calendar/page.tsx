@@ -1002,7 +1002,7 @@ export default function CalendarPage() {
                   <details
                     key={yearGroup.year}
                     className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm"
-                    defaultOpen={yearGroup.year === currentYear}
+                    open={yearGroup.year === currentYear ? true : undefined}
                   >
                     <summary className="cursor-pointer list-none text-sm font-semibold text-slate-700">
                       <span className="flex items-center justify-between">
@@ -1022,9 +1022,11 @@ export default function CalendarPage() {
                         <details
                           key={`${yearGroup.year}-${monthGroup.month}`}
                           className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
-                          defaultOpen={
+                          open={
                             yearGroup.year === currentYear &&
                             monthGroup.month === currentMonth
+                              ? true
+                              : undefined
                           }
                         >
                           <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600">
