@@ -31,7 +31,8 @@ type CalendarProps = {
   onNextMonth: () => void;
   onMonthChange: (month: number) => void;
   onYearChange: (year: number) => void;
-  onDaySelect: (date: Date) => void;
+  onDaySelect: (date: Date, events: CalendarEventDisplay[]) => void;
+  onAddEvent: (date: Date) => void;
   onEventSelect: (event: CalendarEventDisplay) => void;
   onCategoryToggle: (category: CalendarEventDisplay["eventType"]) => void;
 };
@@ -140,6 +141,7 @@ export const Calendar = ({
   onMonthChange,
   onYearChange,
   onDaySelect,
+  onAddEvent,
   onEventSelect,
   onCategoryToggle
 }: CalendarProps) => {
@@ -256,6 +258,7 @@ export const Calendar = ({
                 date.getDate() === selectedDate.getDate() &&
                 date.getMonth() === selectedDate.getMonth() &&
                 date.getFullYear() === selectedDate.getFullYear();
+              const dayEvents = getEventsForDay(events, date);
 
               return (
                 <DayCell
@@ -263,9 +266,10 @@ export const Calendar = ({
                   date={date}
                   isToday={Boolean(isToday)}
                   isSelected={Boolean(isSelected)}
-                  events={getEventsForDay(events, date)}
+                  events={dayEvents}
                   highlightCategory={activeCategory}
                   onSelect={onDaySelect}
+                  onAddEvent={onAddEvent}
                   onEventSelect={onEventSelect}
                 />
               );

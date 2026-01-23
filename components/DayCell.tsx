@@ -7,7 +7,8 @@ type DayCellProps = {
   isSelected: boolean;
   events: CalendarEventDisplay[];
   highlightCategory?: CalendarEventDisplay["eventType"] | null;
-  onSelect: (date: Date) => void;
+  onSelect: (date: Date, events: CalendarEventDisplay[]) => void;
+  onAddEvent: (date: Date) => void;
   onEventSelect: (event: CalendarEventDisplay) => void;
 };
 
@@ -18,6 +19,7 @@ export const DayCell = ({
   events,
   highlightCategory = null,
   onSelect,
+  onAddEvent,
   onEventSelect
 }: DayCellProps) => {
   return (
@@ -25,12 +27,12 @@ export const DayCell = ({
       role={date ? "button" : undefined}
       tabIndex={date ? 0 : -1}
       aria-disabled={!date}
-      onClick={() => (date ? onSelect(date) : null)}
+      onClick={() => (date ? onSelect(date, events) : null)}
       onKeyDown={(event) => {
         if (!date) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onSelect(date);
+          onSelect(date, events);
         }
       }}
       className={`flex min-h-[140px] flex-col gap-2 rounded-2xl border bg-white/70 p-3 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md ${
@@ -39,7 +41,7 @@ export const DayCell = ({
         !date ? "cursor-not-allowed opacity-40" : "cursor-pointer"
       }`}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span
           className={`text-sm font-semibold ${
             isToday ? "text-indigo-600" : "text-slate-700"
@@ -47,11 +49,26 @@ export const DayCell = ({
         >
           {date ? date.getDate() : ""}
         </span>
-        {isToday ? (
-          <span className="rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-            Hoy
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {isToday ? (
+            <span className="rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+              Hoy
+            </span>
+          ) : null}
+          {date ? (
+            <button
+              type="button"
+              aria-label="Crear evento"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAddEvent(date);
+              }}
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-semibold text-slate-600 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600"
+            >
+              +
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="flex flex-1 flex-col gap-2">
         {events.map((event) => {

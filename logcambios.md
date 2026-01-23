@@ -1,5 +1,10 @@
 # Log de cambios
 
+## v0.2.15
+- Botón + en cada día para abrir el modal de creación, manteniendo el clic del día para ver detalles.
+- Nuevo modal animado con el detalle diario de eventos en formato franjas (nombre, tipo, ubicación) y datos de asistentes/horas.
+- Visibilidad reforzada del contador de asistentes en las tarjetas del calendario.
+
 ## v0.2.14
 - Reincorporado el contador de asistentes en las tarjetas del calendario.
 - Ordenados los eventos diarios según la hora de inicio.
