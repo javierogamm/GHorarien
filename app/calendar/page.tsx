@@ -79,13 +79,15 @@ const DEFAULT_USER_COLOR = {
   badgeClass: "bg-slate-100 text-slate-600 ring-slate-200",
   dotClass: "bg-slate-300"
 };
-const csvEscapeValue = (value: string) => `"${value.replace(/"/g, '""')}"`;
+const CSV_DELIMITER = ";";
+const normalizeCsvValue = (value: string) =>
+  value.replace(/[\r\n]+/g, " ").replace(/;/g, ",").trim();
 const toCsvContent = (headers: string[], rows: string[][]) => {
-  const headerRow = headers.map(csvEscapeValue).join(",");
+  const headerRow = headers.map(normalizeCsvValue).join(CSV_DELIMITER);
   const rowLines = rows.map((row) =>
-    row.map((item) => csvEscapeValue(item)).join(",")
+    row.map((item) => normalizeCsvValue(item)).join(CSV_DELIMITER)
   );
-  return [headerRow, ...rowLines].join("\n");
+  return ["sep=;", headerRow, ...rowLines].join("\n");
 };
 const downloadCsvFile = (filename: string, headers: string[], rows: string[][]) => {
   const csvContent = toCsvContent(headers, rows);
