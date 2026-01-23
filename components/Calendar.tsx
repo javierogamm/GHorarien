@@ -42,6 +42,7 @@ type CalendarProps = {
   onWorkweekToggle: () => void;
   myEventsOnly: boolean;
   onMyEventsToggle: () => void;
+  weekAnchorDate: Date;
   controlTableEnabled: boolean;
   onControlTableToggle: () => void;
   showControlTableToggle: boolean;
@@ -137,8 +138,9 @@ const getMinutesFromTime = (time?: string | null) => {
 
 const formatEventTime = (time?: string | null) => {
   if (!time) return "—";
-  const [hours = "", minutes = ""] = time.split(":");
-  if (!hours || !minutes) return time;
+  const match = time.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return time;
+  const [, hours, minutes] = match;
   return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
 };
 
@@ -210,6 +212,7 @@ export const Calendar = ({
   onWorkweekToggle,
   myEventsOnly,
   onMyEventsToggle,
+  weekAnchorDate,
   controlTableEnabled,
   onControlTableToggle,
   showControlTableToggle,
@@ -226,11 +229,15 @@ export const Calendar = ({
   const today = new Date();
   const includeWeekends = !workweekOnly;
   const days = buildCalendarDays(currentYear, currentMonth, includeWeekends);
-  const weekDates = buildWeekDates(today, includeWeekends);
+  const weekReferenceDate = viewMode === "weekly" ? weekAnchorDate : today;
+  const weekDates = buildWeekDates(weekReferenceDate, includeWeekends);
   const weekLabels = includeWeekends ? weekDays : weekDays.slice(0, 5);
   const monthLabel =
-    viewMode === "weekly" ? monthNames[today.getMonth()] : monthNames[currentMonth];
-  const yearLabel = viewMode === "weekly" ? today.getFullYear() : currentYear;
+    viewMode === "weekly"
+      ? monthNames[weekReferenceDate.getMonth()]
+      : monthNames[currentMonth];
+  const yearLabel =
+    viewMode === "weekly" ? weekReferenceDate.getFullYear() : currentYear;
   const gridColumnsClass = includeWeekends ? "grid-cols-7" : "grid-cols-5";
   const minWidthClass = includeWeekends ? "min-w-[900px]" : "min-w-[720px]";
   const weeklyColumnsClass = includeWeekends ? "grid-cols-7" : "grid-cols-5";
@@ -293,19 +300,17 @@ export const Calendar = ({
           <div className="flex items-center gap-3">
             <button
               onClick={onPrevMonth}
-              disabled={viewMode === "weekly"}
               className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
               type="button"
             >
-              Mes anterior
+              {viewMode === "weekly" ? "Semana anterior" : "Mes anterior"}
             </button>
             <button
               onClick={onNextMonth}
-              disabled={viewMode === "weekly"}
               className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
               type="button"
             >
-              Mes siguiente
+              {viewMode === "weekly" ? "Semana siguiente" : "Mes siguiente"}
             </button>
           </div>
         </div>

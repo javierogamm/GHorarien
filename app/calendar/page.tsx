@@ -118,6 +118,7 @@ export default function CalendarPage() {
   const [workweekOnly, setWorkweekOnly] = useState(true);
   const [myEventsOnly, setMyEventsOnly] = useState(false);
   const [controlTableEnabled, setControlTableEnabled] = useState(false);
+  const [weekAnchorDate, setWeekAnchorDate] = useState(today);
   const [activeCategory, setActiveCategory] = useState<EventCategory | null>(null);
   const [establishmentSearch, setEstablishmentSearch] = useState("");
   const [newEstablishmentName, setNewEstablishmentName] = useState("");
@@ -285,6 +286,14 @@ export default function CalendarPage() {
   }, [currentMonth, currentYear, selectedDate]);
 
   const handlePrevMonth = () => {
+    if (calendarView === "weekly") {
+      setWeekAnchorDate((prev) => {
+        const next = new Date(prev);
+        next.setDate(prev.getDate() - 7);
+        return next;
+      });
+      return;
+    }
     if (currentMonth === 0) {
       setCurrentMonth(11);
       setCurrentYear((prev) => prev - 1);
@@ -294,12 +303,47 @@ export default function CalendarPage() {
   };
 
   const handleNextMonth = () => {
+    if (calendarView === "weekly") {
+      setWeekAnchorDate((prev) => {
+        const next = new Date(prev);
+        next.setDate(prev.getDate() + 7);
+        return next;
+      });
+      return;
+    }
     if (currentMonth === 11) {
       setCurrentMonth(0);
       setCurrentYear((prev) => prev + 1);
     } else {
       setCurrentMonth((prev) => prev + 1);
     }
+  };
+
+  const handleViewModeChange = (view: "monthly" | "weekly") => {
+    setCalendarView(view);
+    if (view === "weekly") {
+      setWeekAnchorDate(selectedDate ?? today);
+    }
+  };
+
+  const handleMyEventsToggle = () => {
+    setMyEventsOnly((prev) => {
+      const next = !prev;
+      if (next) {
+        setControlTableEnabled(false);
+      }
+      return next;
+    });
+  };
+
+  const handleControlTableToggle = () => {
+    setControlTableEnabled((prev) => {
+      const next = !prev;
+      if (next) {
+        setMyEventsOnly(false);
+      }
+      return next;
+    });
   };
 
   const handleLogout = () => {
@@ -410,7 +454,7 @@ export default function CalendarPage() {
   const getUserColor = (value: string) => userColorMap.get(value) ?? DEFAULT_USER_COLOR;
   const canCreateEvents = userRole !== "User";
   const canEditDetails = userRole !== "User";
-  const showControlTable = userRole !== "User";
+  const showControlTable = userRole === "Admin" || userRole === "Boss";
 
   const handleAddAttendee = (value: string, target: "create" | "edit") => {
     if (!validUsernames.has(value)) return;
@@ -933,6 +977,58 @@ export default function CalendarPage() {
       }));
   }, [myEvents]);
 
+  const controlTableByUser = useMemo(() => {
+    const userMap = new Map<
+      string,
+      Map<number | null, Map<number | null, CalendarEvent[]>>
+    >();
+
+    allEvents.forEach((event) => {
+      const userLabel = event.user?.trim() || "Sin usuario";
+      const parsedDate = parseDateWithoutTime(event.fecha);
+      const year = parsedDate ? parsedDate.getFullYear() : null;
+      const month = parsedDate ? parsedDate.getMonth() : null;
+      if (!userMap.has(userLabel)) {
+        userMap.set(userLabel, new Map());
+      }
+      const yearMap = userMap.get(userLabel);
+      if (!yearMap) return;
+      if (!yearMap.has(year)) {
+        yearMap.set(year, new Map());
+      }
+      const monthMap = yearMap.get(year);
+      if (!monthMap) return;
+      if (!monthMap.has(month)) {
+        monthMap.set(month, []);
+      }
+      monthMap.get(month)?.push(event);
+    });
+
+    const sortNullableNumber = (left: number | null, right: number | null) => {
+      if (left === null && right === null) return 0;
+      if (left === null) return 1;
+      if (right === null) return -1;
+      return left - right;
+    };
+
+    return Array.from(userMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([user, yearsMap]) => ({
+        user,
+        years: Array.from(yearsMap.entries())
+          .sort((a, b) => sortNullableNumber(a[0], b[0]))
+          .map(([year, monthsMap]) => ({
+            year,
+            months: Array.from(monthsMap.entries())
+              .sort((a, b) => sortNullableNumber(a[0], b[0]))
+              .map(([month, events]) => ({
+                month,
+                events
+              }))
+          }))
+      }));
+  }, [allEvents]);
+
   return (
     <main className="min-h-screen px-6 py-12">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
@@ -1131,6 +1227,193 @@ export default function CalendarPage() {
               </div>
             )}
           </section>
+        ) : controlTableEnabled ? (
+          <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-soft backdrop-blur">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Tabla de control
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Resumen agrupado por usuario, año y mes de todos los eventos
+                  registrados.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setControlTableEnabled(false)}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-indigo-200 hover:text-indigo-600"
+              >
+                Volver al calendario
+              </button>
+            </div>
+
+            {allEventsError ? (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                {allEventsError}
+              </div>
+            ) : null}
+
+            {controlTableByUser.length === 0 ? (
+              <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-10 text-center text-sm text-slate-500">
+                No hay eventos registrados.
+              </div>
+            ) : (
+              <div className="mt-6 flex flex-col gap-4">
+                {controlTableByUser.map((userGroup) => (
+                  <details
+                    key={userGroup.user}
+                    className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm"
+                  >
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-slate-700">
+                      <span className="flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full ${getUserColor(userGroup.user).dotClass}`}
+                            aria-hidden="true"
+                          />
+                          <span>{userGroup.user}</span>
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {userGroup.years.reduce(
+                            (total, yearGroup) =>
+                              total +
+                              yearGroup.months.reduce(
+                                (monthTotal, monthGroup) =>
+                                  monthTotal + monthGroup.events.length,
+                                0
+                              ),
+                            0
+                          )}{" "}
+                          eventos
+                        </span>
+                      </span>
+                    </summary>
+                    <div className="mt-4 flex flex-col gap-3">
+                      {userGroup.years.map((yearGroup) => (
+                        <details
+                          key={`${userGroup.user}-${yearGroup.year ?? "sin-anio"}`}
+                          className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                        >
+                          <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600">
+                            <span className="flex items-center justify-between">
+                              <span>{yearGroup.year ?? "Sin año"}</span>
+                              <span className="text-xs text-slate-400">
+                                {yearGroup.months.reduce(
+                                  (monthTotal, monthGroup) =>
+                                    monthTotal + monthGroup.events.length,
+                                  0
+                                )}{" "}
+                                eventos
+                              </span>
+                            </span>
+                          </summary>
+                          <div className="mt-3 flex flex-col gap-3">
+                            {yearGroup.months.map((monthGroup) => (
+                              <details
+                                key={`${userGroup.user}-${yearGroup.year ?? "sin-anio"}-${
+                                  monthGroup.month ?? "sin-mes"
+                                }`}
+                                className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                              >
+                                <summary className="cursor-pointer list-none text-sm font-semibold text-slate-600">
+                                  <span className="flex items-center justify-between">
+                                    <span>
+                                      {monthGroup.month === null
+                                        ? "Sin mes"
+                                        : MONTH_NAMES[monthGroup.month]}
+                                    </span>
+                                    <span className="text-xs text-slate-400">
+                                      {monthGroup.events.length} eventos
+                                    </span>
+                                  </span>
+                                </summary>
+                                <div className="mt-3 flex flex-col gap-3">
+                                  {monthGroup.events.map((event) => {
+                                    const meta = EVENT_CATEGORY_META[
+                                      event.eventType
+                                    ] ?? {
+                                      label: "Evento",
+                                      dotClass: "bg-slate-300",
+                                      cardClass:
+                                        "bg-slate-100 text-slate-600 border-slate-200"
+                                    };
+                                    return (
+                                      <details
+                                        key={event.$id}
+                                        className={`rounded-2xl border px-4 py-3 ${meta.cardClass}`}
+                                      >
+                                        <summary className="cursor-pointer list-none text-sm font-semibold">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span
+                                              className={`h-2.5 w-2.5 rounded-full ${meta.dotClass}`}
+                                              aria-hidden="true"
+                                            />
+                                            <span className="text-slate-900">
+                                              {event.nombre || "Evento"}
+                                            </span>
+                                            <span className="text-slate-500">·</span>
+                                            <span className="text-slate-600">
+                                              {meta.label}
+                                            </span>
+                                            <span className="text-slate-500">·</span>
+                                            <span className="text-slate-600">
+                                              {formatShortDate(event.fecha)}
+                                            </span>
+                                            <span className="text-slate-500">·</span>
+                                            <span className="text-slate-600">
+                                              {formatDisplayTime(event.horaInicio)}
+                                            </span>
+                                          </div>
+                                        </summary>
+                                        <div className="mt-3 grid gap-2 text-xs text-slate-600">
+                                          <div className="flex flex-wrap gap-2">
+                                            <span className="font-semibold text-slate-500">
+                                              Fecha:
+                                            </span>
+                                            <span>{formatDisplayDate(event.fecha)}</span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <span className="font-semibold text-slate-500">
+                                              Inicio:
+                                            </span>
+                                            <span>
+                                              {formatDisplayTime(event.horaInicio)}
+                                            </span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <span className="font-semibold text-slate-500">
+                                              Establecimiento:
+                                            </span>
+                                            <span>
+                                              {event.establecimiento?.trim() ||
+                                                "Sin ubicación"}
+                                            </span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <span className="font-semibold text-slate-500">
+                                              Notas:
+                                            </span>
+                                            <span>
+                                              {event.notas?.trim() || "Sin notas"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </details>
+                                    );
+                                  })}
+                                </div>
+                              </details>
+                            ))}
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </section>
         ) : (
           <Calendar
             currentMonth={currentMonth}
@@ -1139,15 +1422,14 @@ export default function CalendarPage() {
             selectedDate={selectedDate}
             activeCategory={activeCategory}
             viewMode={calendarView}
-            onViewModeChange={setCalendarView}
+            onViewModeChange={handleViewModeChange}
             workweekOnly={workweekOnly}
             onWorkweekToggle={() => setWorkweekOnly((prev) => !prev)}
             myEventsOnly={myEventsOnly}
-            onMyEventsToggle={() => setMyEventsOnly((prev) => !prev)}
+            onMyEventsToggle={handleMyEventsToggle}
+            weekAnchorDate={weekAnchorDate}
             controlTableEnabled={controlTableEnabled}
-            onControlTableToggle={() =>
-              setControlTableEnabled((prev) => !prev)
-            }
+            onControlTableToggle={handleControlTableToggle}
             showControlTableToggle={showControlTable}
             allowAddEvent={canCreateEvents}
             onPrevMonth={handlePrevMonth}
@@ -1161,112 +1443,10 @@ export default function CalendarPage() {
           />
         )}
 
-        {showControlTable && !myEventsOnly ? (
-          <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-soft backdrop-blur">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Tabla de control
-                </h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Listado de todos los registros existentes en la colección
-                  <span className="font-semibold text-slate-700"> tabla</span>.
-                </p>
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                {allEvents.length} registros
-              </span>
-            </div>
-
-            {allEventsError ? (
-              <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-600">
-                {allEventsError}
-              </p>
-            ) : null}
-
-            {allEventsLoading ? (
-              <div className="mt-6 flex items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-12 text-sm font-semibold text-slate-500">
-                Cargando tabla...
-              </div>
-            ) : (
-              <div className="mt-6 overflow-x-auto">
-                <table className="min-w-[900px] w-full text-left text-sm text-slate-600">
-                  <thead className="text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Evento</th>
-                      <th className="px-4 py-3">Tipo</th>
-                      <th className="px-4 py-3">Usuario</th>
-                      <th className="px-4 py-3">Fecha</th>
-                      <th className="px-4 py-3">Inicio</th>
-                      <th className="px-4 py-3">Duración</th>
-                      <th className="px-4 py-3">Establecimiento</th>
-                      <th className="px-4 py-3">Notas</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {allEvents.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={8}
-                          className="px-4 py-6 text-center text-sm text-slate-400"
-                        >
-                          No hay registros en la tabla todavía.
-                        </td>
-                      </tr>
-                    ) : (
-                      allEvents.map((event) => (
-                        <tr key={event.$id} className="bg-white/40">
-                          <td className="px-4 py-3 font-medium text-slate-700">
-                            {event.nombre || "Sin nombre"}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="flex items-center gap-2">
-                              <span
-                                className={`h-2 w-2 rounded-full ${
-                                  EVENT_CATEGORY_META[event.eventType]?.dotClass ??
-                                  "bg-slate-300"
-                                }`}
-                              />
-                              {EVENT_CATEGORY_META[event.eventType]?.label ??
-                                event.eventType}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="flex items-center gap-2">
-                              <span
-                                className={`h-2 w-2 rounded-full ${getUserColor(event.user).dotClass}`}
-                                aria-hidden="true"
-                              />
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${getUserColor(event.user).badgeClass}`}
-                              >
-                                {event.user}
-                              </span>
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            {formatDisplayDate(event.fecha)}
-                          </td>
-                          <td className="px-4 py-3">
-                            {formatDisplayDate(event.horaInicio)}
-                          </td>
-                          <td className="px-4 py-3">
-                            {event.duration ? `${event.duration} min` : "—"}
-                          </td>
-                          <td className="px-4 py-3">
-                            {event.establecimiento?.trim() || "—"}
-                          </td>
-                          <td className="px-4 py-3">
-                            {event.notas?.trim() || "—"}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+        {showControlTable && !myEventsOnly && !controlTableEnabled ? (
+          <div className="flex items-center justify-end text-xs text-slate-400">
+            Usa el botón &quot;Tabla de control&quot; para ver el resumen agrupado.
+          </div>
         ) : null}
       </div>
 
