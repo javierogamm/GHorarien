@@ -57,8 +57,11 @@ export const EventItem = ({
         aria-hidden="true"
       />
 
-      <span className="truncate pl-2 text-left text-[11px] font-semibold text-slate-800">
-        {event.nombre ? event.nombre : "Evento"} ({event.attendeeCount})
+      <span className="flex min-w-0 flex-1 items-center gap-1 pl-2 text-left text-[11px] font-semibold text-slate-800">
+        <span className="truncate">
+          {event.nombre ? event.nombre : "Evento"}
+        </span>
+        <span className="shrink-0 text-slate-700">({event.attendeeCount})</span>
       </span>
     </button>
   );

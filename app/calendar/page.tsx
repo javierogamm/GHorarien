@@ -54,6 +54,10 @@ export default function CalendarPage() {
   const [eventEstablishment, setEventEstablishment] = useState("");
   const [attendees, setAttendees] = useState("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isDayDetailModalOpen, setIsDayDetailModalOpen] = useState(false);
+  const [dayDetailEvents, setDayDetailEvents] = useState<CalendarEventDisplay[]>(
+    []
+  );
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventDisplay | null>(
     null
   );
@@ -230,6 +234,16 @@ export default function CalendarPage() {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
+  const formatDisplayTime = (value?: string | null) => {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "—";
+    return parsed.toLocaleTimeString("es-ES", {
       hour: "2-digit",
       minute: "2-digit"
     });
@@ -467,22 +481,38 @@ export default function CalendarPage() {
     }
   };
 
-  const handleDaySelect = (date: Date) => {
+  const handleDaySelect = (date: Date, events: CalendarEventDisplay[]) => {
+    setSelectedDate(date);
+    setDayDetailEvents(events);
+    setIsDayDetailModalOpen(true);
+  };
+
+  const handleAddEvent = (date: Date) => {
     setSelectedDate(date);
     setFormStatus({ loading: false, error: "", success: "" });
     const meta = EVENT_CATEGORY_META[eventType];
     setEventStartTime(meta.startTime);
     setEventEndTime(meta.endTime);
     setIsCreateModalOpen(true);
+    setIsDayDetailModalOpen(false);
   };
 
   const handleEventSelect = (event: CalendarEventDisplay) => {
     setSelectedEvent(event);
   };
 
+  const handleDayDetailEventSelect = (event: CalendarEventDisplay) => {
+    setSelectedEvent(event);
+    setIsDayDetailModalOpen(false);
+  };
+
   const closeCreateModal = () => {
     setIsCreateModalOpen(false);
     setFormStatus({ loading: false, error: "", success: "" });
+  };
+
+  const closeDayDetailModal = () => {
+    setIsDayDetailModalOpen(false);
   };
 
   const closeEventModal = () => {
@@ -696,6 +726,7 @@ export default function CalendarPage() {
             onMonthChange={setCurrentMonth}
             onYearChange={setCurrentYear}
             onDaySelect={handleDaySelect}
+            onAddEvent={handleAddEvent}
             onEventSelect={handleEventSelect}
             onCategoryToggle={handleCategoryToggle}
           />
@@ -798,6 +829,108 @@ export default function CalendarPage() {
             </div>
           )}
         </section>
+      </div>
+
+      <div
+        className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-10 backdrop-blur-sm transition ${
+          isDayDetailModalOpen
+            ? "opacity-100"
+            : "pointer-events-none opacity-0"
+        }`}
+        onClick={closeDayDetailModal}
+      >
+        <div
+          className={`max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/70 bg-white/90 p-6 shadow-soft transition ${
+            isDayDetailModalOpen
+              ? "translate-y-0 scale-100"
+              : "translate-y-4 scale-95"
+          }`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Eventos del día
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Detalle de los eventos programados.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeDayDetailModal}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+            >
+              Cerrar
+            </button>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-600">
+            <span className="font-semibold text-slate-700">Fecha:</span>
+            {selectedDate ? (
+              <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-600">
+                {selectedDate.toLocaleDateString("es-ES", {
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric"
+                })}
+              </span>
+            ) : (
+              <span className="text-sm text-slate-400">
+                Selecciona un día en el calendario.
+              </span>
+            )}
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              {dayDetailEvents.length} eventos
+            </span>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-3">
+            {dayDetailEvents.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-6 text-center text-sm text-slate-500">
+                No hay eventos para este día.
+              </div>
+            ) : (
+              dayDetailEvents.map((event) => {
+                const meta =
+                  EVENT_CATEGORY_META[event.eventType] ?? EVENT_CATEGORY_META.Comida;
+                return (
+                  <button
+                    key={event.groupKey}
+                    type="button"
+                    onClick={() => handleDayDetailEventSelect(event)}
+                    className={`relative flex w-full flex-col gap-2 rounded-2xl border px-4 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${meta.cardClass}`}
+                  >
+                    <span
+                      className={`absolute inset-y-0 left-0 w-1.5 rounded-l-2xl ${meta.dotClass}`}
+                      aria-hidden="true"
+                    />
+                    <div className="flex flex-wrap items-center gap-2 pl-2 text-sm font-semibold text-slate-800">
+                      <span className="truncate">
+                        {event.nombre || "Evento"}
+                      </span>
+                      <span className="text-slate-500">-</span>
+                      <span className="text-slate-600">{meta.label}</span>
+                      <span className="text-slate-500">-</span>
+                      <span className="text-slate-600">
+                        {event.establecimiento?.trim() || "Sin ubicación"}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-4 pl-2 text-xs font-medium text-slate-600">
+                      <span>
+                        Asistentes ({event.attendeeCount}):{" "}
+                        {event.attendees.length > 0
+                          ? event.attendees.join(", ")
+                          : "Sin asistentes"}
+                      </span>
+                      <span>Inicio: {formatDisplayTime(event.horaInicio)}</span>
+                      <span>Fin: {formatDisplayTime(event.horaFin)}</span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
       </div>
 
       <div
