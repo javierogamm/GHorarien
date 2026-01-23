@@ -1,5 +1,10 @@
 # Log de cambios
 
+## v0.2.22
+- Navegación semanal habilitada con botones de semana anterior/siguiente.
+- Tarjetas semanales muestran solo la hora en formato HH:MM.
+- Vista Tabla de control convertida a acordeón agrupado por usuario, año y mes.
+
 ## v0.2.21
 - Tarjetas de eventos semanales compactadas con hora y asistentes en formato mínimo.
 
