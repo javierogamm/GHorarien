@@ -5,6 +5,15 @@ import { DayCell } from "./DayCell";
 import type { CalendarEventDisplay } from "./calendarTypes";
 
 const weekDays = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+const weekDaysFull = [
+  "Lunes",
+  "Martes",
+  "Miércoles",
+  "Jueves",
+  "Viernes",
+  "Sábado",
+  "Domingo"
+];
 
 const monthNames = [
   "Enero",
@@ -29,6 +38,8 @@ type CalendarProps = {
   activeCategory: CalendarEventDisplay["eventType"] | null;
   viewMode: "monthly" | "weekly";
   onViewModeChange: (view: "monthly" | "weekly") => void;
+  workweekOnly: boolean;
+  onWorkweekToggle: () => void;
   myEventsOnly: boolean;
   onMyEventsToggle: () => void;
   controlTableEnabled: boolean;
@@ -45,20 +56,45 @@ type CalendarProps = {
   onCategoryToggle: (category: CalendarEventDisplay["eventType"]) => void;
 };
 
-const buildCalendarDays = (year: number, month: number) => {
+const buildCalendarDays = (
+  year: number,
+  month: number,
+  includeWeekends: boolean
+) => {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const daysInMonth = lastDay.getDate();
   const startWeekDay = (firstDay.getDay() + 6) % 7;
-  const totalCells = Math.ceil((startWeekDay + daysInMonth) / 7) * 7;
+  const weekdayColumns = includeWeekends ? 7 : 5;
+  const initialBlanks =
+    includeWeekends || startWeekDay < 5 ? startWeekDay : 0;
 
-  return Array.from({ length: totalCells }, (_, index) => {
-    const dayNumber = index - startWeekDay + 1;
-    if (dayNumber < 1 || dayNumber > daysInMonth) {
-      return null;
+  if (includeWeekends) {
+    const totalCells = Math.ceil((startWeekDay + daysInMonth) / 7) * 7;
+
+    return Array.from({ length: totalCells }, (_, index) => {
+      const dayNumber = index - startWeekDay + 1;
+      if (dayNumber < 1 || dayNumber > daysInMonth) {
+        return null;
+      }
+      return new Date(year, month, dayNumber);
+    });
+  }
+
+  const days: Array<Date | null> = Array.from({ length: initialBlanks }, () => null);
+  for (let dayNumber = 1; dayNumber <= daysInMonth; dayNumber += 1) {
+    const date = new Date(year, month, dayNumber);
+    const weekDayIndex = (date.getDay() + 6) % 7;
+    if (weekDayIndex < 5) {
+      days.push(date);
     }
-    return new Date(year, month, dayNumber);
-  });
+  }
+
+  const totalCells = Math.ceil(days.length / weekdayColumns) * weekdayColumns;
+  while (days.length < totalCells) {
+    days.push(null);
+  }
+  return days;
 };
 
 const getDateParts = (date: Date) => ({
@@ -97,6 +133,31 @@ const getMinutesFromTime = (time?: string | null) => {
     return Number.POSITIVE_INFINITY;
   }
   return hours * 60 + minutes;
+};
+
+const formatEventTime = (time?: string | null) => {
+  if (!time) return "—";
+  const [hours = "", minutes = ""] = time.split(":");
+  if (!hours || !minutes) return time;
+  return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+};
+
+const getWeekStart = (date: Date) => {
+  const dayIndex = (date.getDay() + 6) % 7;
+  const start = new Date(date);
+  start.setDate(date.getDate() - dayIndex);
+  start.setHours(0, 0, 0, 0);
+  return start;
+};
+
+const buildWeekDates = (date: Date, includeWeekends: boolean) => {
+  const start = getWeekStart(date);
+  const totalDays = includeWeekends ? 7 : 5;
+  return Array.from({ length: totalDays }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    return day;
+  });
 };
 
 const getEventsForDay = (
@@ -145,6 +206,8 @@ export const Calendar = ({
   activeCategory,
   viewMode,
   onViewModeChange,
+  workweekOnly,
+  onWorkweekToggle,
   myEventsOnly,
   onMyEventsToggle,
   controlTableEnabled,
@@ -160,8 +223,16 @@ export const Calendar = ({
   onEventSelect,
   onCategoryToggle
 }: CalendarProps) => {
-  const days = buildCalendarDays(currentYear, currentMonth);
   const today = new Date();
+  const includeWeekends = !workweekOnly;
+  const days = buildCalendarDays(currentYear, currentMonth, includeWeekends);
+  const weekDates = buildWeekDates(today, includeWeekends);
+  const weekLabels = includeWeekends ? weekDays : weekDays.slice(0, 5);
+  const monthLabel =
+    viewMode === "weekly" ? monthNames[today.getMonth()] : monthNames[currentMonth];
+  const yearLabel = viewMode === "weekly" ? today.getFullYear() : currentYear;
+  const gridColumnsClass = includeWeekends ? "grid-cols-7" : "grid-cols-5";
+  const minWidthClass = includeWeekends ? "min-w-[900px]" : "min-w-[720px]";
 
   return (
     <section className="flex flex-col gap-6">
@@ -172,48 +243,64 @@ export const Calendar = ({
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-500">
                 Calendario {viewMode === "weekly" ? "semanal" : "mensual"}
               </p>
-              <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-1 text-xs font-semibold text-slate-500 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-1 py-1 text-xs font-semibold text-slate-500 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => onViewModeChange("monthly")}
+                    aria-pressed={viewMode === "monthly"}
+                    className={`rounded-full px-3 py-1 transition ${
+                      viewMode === "monthly"
+                        ? "bg-indigo-500 text-white shadow-sm"
+                        : "text-slate-500 hover:text-indigo-500"
+                    }`}
+                  >
+                    Mensual
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onViewModeChange("weekly")}
+                    aria-pressed={viewMode === "weekly"}
+                    className={`rounded-full px-3 py-1 transition ${
+                      viewMode === "weekly"
+                        ? "bg-indigo-500 text-white shadow-sm"
+                        : "text-slate-500 hover:text-indigo-500"
+                    }`}
+                  >
+                    Semanal
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => onViewModeChange("monthly")}
-                  aria-pressed={viewMode === "monthly"}
-                  className={`rounded-full px-3 py-1 transition ${
-                    viewMode === "monthly"
-                      ? "bg-indigo-500 text-white shadow-sm"
-                      : "text-slate-500 hover:text-indigo-500"
+                  onClick={onWorkweekToggle}
+                  aria-pressed={workweekOnly}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                    workweekOnly
+                      ? "border-indigo-200 bg-indigo-500 text-white"
+                      : "border-slate-200 bg-white text-slate-500 hover:text-indigo-500"
                   }`}
                 >
-                  Mensual
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onViewModeChange("weekly")}
-                  aria-pressed={viewMode === "weekly"}
-                  className={`rounded-full px-3 py-1 transition ${
-                    viewMode === "weekly"
-                      ? "bg-indigo-500 text-white shadow-sm"
-                      : "text-slate-500 hover:text-indigo-500"
-                  }`}
-                >
-                  Semanal
+                  {workweekOnly ? "Laboral" : "Natural"}
                 </button>
               </div>
             </div>
             <h1 className="text-3xl font-semibold text-slate-900">
-              {monthNames[currentMonth]} {currentYear}
+              {monthLabel} {yearLabel}
             </h1>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={onPrevMonth}
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-600"
+              disabled={viewMode === "weekly"}
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
               type="button"
             >
               Mes anterior
             </button>
             <button
               onClick={onNextMonth}
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-600"
+              disabled={viewMode === "weekly"}
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
               type="button"
             >
               Mes siguiente
@@ -229,6 +316,7 @@ export const Calendar = ({
             className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition focus:border-indigo-400 focus:outline-none"
             value={currentMonth}
             onChange={(event) => onMonthChange(Number(event.target.value))}
+            disabled={viewMode === "weekly"}
           >
             {monthNames.map((month, index) => (
               <option key={month} value={index}>
@@ -244,6 +332,7 @@ export const Calendar = ({
             className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition focus:border-indigo-400 focus:outline-none"
             value={currentYear}
             onChange={(event) => onYearChange(Number(event.target.value))}
+            disabled={viewMode === "weekly"}
           >
             {Array.from({ length: 7 }, (_, index) => currentYear - 3 + index).map(
               (year) => (
@@ -306,49 +395,187 @@ export const Calendar = ({
         </div>
       </header>
 
-      <div className="overflow-x-auto pb-2">
-        <div className="min-w-[900px]">
-          <div className="grid grid-cols-7 gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {weekDays.map((day) => (
-              <div key={day} className="px-3">
-                {day}
+      {viewMode === "weekly" ? (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {weekDates.map((date) => {
+            const isToday =
+              date.getDate() === today.getDate() &&
+              date.getMonth() === today.getMonth() &&
+              date.getFullYear() === today.getFullYear();
+            const isSelected =
+              selectedDate &&
+              date.getDate() === selectedDate.getDate() &&
+              date.getMonth() === selectedDate.getMonth() &&
+              date.getFullYear() === selectedDate.getFullYear();
+            const dayEvents = getEventsForDay(events, date);
+
+            return (
+              <div
+                key={date.toISOString()}
+                role="button"
+                tabIndex={0}
+                onClick={() => onDaySelect(date, dayEvents)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onDaySelect(date, dayEvents);
+                  }
+                }}
+                className={`flex min-h-[260px] flex-col gap-4 rounded-3xl border bg-white/70 p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md ${
+                  isToday
+                    ? "border-indigo-400/70 bg-indigo-50/60"
+                    : "border-slate-200/70"
+                } ${isSelected ? "ring-2 ring-indigo-400/70" : ""}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                      {weekDaysFull[(date.getDay() + 6) % 7]}
+                    </p>
+                    <p className="text-2xl font-semibold text-slate-900">
+                      {date.getDate()} {monthNames[date.getMonth()]}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isToday ? (
+                      <span className="rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                        Hoy
+                      </span>
+                    ) : null}
+                    {allowAddEvent ? (
+                      <button
+                        type="button"
+                        aria-label="Crear evento"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onAddEvent(date);
+                        }}
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-600 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600"
+                      >
+                        +
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-col gap-3">
+                  {dayEvents.length === 0 ? (
+                    <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-6 text-center text-sm text-slate-500">
+                      No hay eventos para este día.
+                    </div>
+                  ) : (
+                    dayEvents.map((event) => {
+                      const meta = EVENT_CATEGORY_META[event.eventType] ?? {
+                        label: "Evento",
+                        dotClass: "bg-slate-300",
+                        cardClass: "bg-slate-100 text-slate-600 border-slate-200"
+                      };
+                      const isFiltered = Boolean(activeCategory);
+                      const isHighlighted =
+                        isFiltered && event.eventType === activeCategory;
+
+                      return (
+                        <button
+                          key={event.groupKey}
+                          type="button"
+                          onClick={(eventClick) => {
+                            eventClick.stopPropagation();
+                            onEventSelect(event);
+                          }}
+                          className={`relative flex w-full flex-col gap-2 rounded-2xl border px-4 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${meta.cardClass} ${
+                            isFiltered && !isHighlighted ? "opacity-40" : ""
+                          } ${isHighlighted ? "ring-2 ring-white/70" : ""}`}
+                        >
+                          <span
+                            className={`absolute inset-y-0 left-0 w-1.5 rounded-l-2xl ${meta.dotClass}`}
+                            aria-hidden="true"
+                          />
+                          <div className="flex flex-wrap items-center gap-2 pl-2 text-sm font-semibold text-slate-800">
+                            <span className="truncate">
+                              {event.nombre || "Evento"}
+                            </span>
+                            <span className="text-slate-500">-</span>
+                            <span className="text-slate-600">{meta.label}</span>
+                            <span className="text-slate-500">-</span>
+                            <span className="text-slate-600">
+                              {event.establecimiento?.trim() || "Sin ubicación"}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 pl-2 text-xs font-medium text-slate-600">
+                            <span>Inicio: {formatEventTime(event.horaInicio)}</span>
+                            <span>Asistentes: {event.attendeeCount}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 pl-2 text-[11px] font-semibold text-slate-600">
+                            {event.attendees.length > 0 ? (
+                              event.attendees.map((attendee) => (
+                                <span
+                                  key={attendee}
+                                  className="rounded-full bg-slate-100 px-2 py-0.5"
+                                >
+                                  {attendee}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-slate-400">
+                                Sin asistentes
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="overflow-x-auto pb-2">
+          <div className={minWidthClass}>
+            <div
+              className={`grid ${gridColumnsClass} gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500`}
+            >
+              {weekLabels.map((day) => (
+                <div key={day} className="px-3">
+                  {day}
+                </div>
+              ))}
+            </div>
 
-          <div className="mt-4 grid grid-cols-7 gap-4">
-            {days.map((date, index) => {
-              const isToday =
-                date &&
-                date.getDate() === today.getDate() &&
-                date.getMonth() === today.getMonth() &&
-                date.getFullYear() === today.getFullYear();
-              const isSelected =
-                date &&
-                selectedDate &&
-                date.getDate() === selectedDate.getDate() &&
-                date.getMonth() === selectedDate.getMonth() &&
-                date.getFullYear() === selectedDate.getFullYear();
-              const dayEvents = getEventsForDay(events, date);
+            <div className={`mt-4 grid ${gridColumnsClass} gap-4`}>
+              {days.map((date, index) => {
+                const isToday =
+                  date &&
+                  date.getDate() === today.getDate() &&
+                  date.getMonth() === today.getMonth() &&
+                  date.getFullYear() === today.getFullYear();
+                const isSelected =
+                  date &&
+                  selectedDate &&
+                  date.getDate() === selectedDate.getDate() &&
+                  date.getMonth() === selectedDate.getMonth() &&
+                  date.getFullYear() === selectedDate.getFullYear();
+                const dayEvents = getEventsForDay(events, date);
 
-              return (
-                <DayCell
-                  key={`${currentYear}-${currentMonth}-${index}`}
-                  date={date}
-                  isToday={Boolean(isToday)}
-                  isSelected={Boolean(isSelected)}
-                  events={dayEvents}
-                  highlightCategory={activeCategory}
-                  allowAddEvent={allowAddEvent}
-                  onSelect={onDaySelect}
-                  onAddEvent={onAddEvent}
-                  onEventSelect={onEventSelect}
-                />
-              );
-            })}
+                return (
+                  <DayCell
+                    key={`${currentYear}-${currentMonth}-${index}`}
+                    date={date}
+                    isToday={Boolean(isToday)}
+                    isSelected={Boolean(isSelected)}
+                    events={dayEvents}
+                    highlightCategory={activeCategory}
+                    allowAddEvent={allowAddEvent}
+                    onSelect={onDaySelect}
+                    onAddEvent={onAddEvent}
+                    onEventSelect={onEventSelect}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </section>
   );
 };

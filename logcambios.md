@@ -1,5 +1,10 @@
 # Log de cambios
 
+## v0.2.18
+- Nueva vista semanal centrada en la semana actual, con tarjetas más grandes y eventos detallados.
+- Toggle Natural/Laboral para ocultar sábados y domingos en vistas mensual y semanal.
+- Selector de asistentes actualizado para mover usuarios entre listas con botones + y -.
+
 ## v0.2.17
 - Eliminación de la hora fin en creación/edición/visualización, dejando solo hora de inicio.
 - Restricción de rol "User" para impedir creación de eventos y limitar la edición a asistentes.

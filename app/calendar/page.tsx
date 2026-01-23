@@ -101,6 +101,7 @@ export default function CalendarPage() {
   const [calendarView, setCalendarView] = useState<"monthly" | "weekly">(
     "monthly"
   );
+  const [workweekOnly, setWorkweekOnly] = useState(false);
   const [myEventsOnly, setMyEventsOnly] = useState(false);
   const [controlTableEnabled, setControlTableEnabled] = useState(false);
   const [activeCategory, setActiveCategory] = useState<EventCategory | null>(null);
@@ -351,6 +352,21 @@ export default function CalendarPage() {
   const sortedUsers = useMemo(
     () => [...users].sort((a, b) => a.user.localeCompare(b.user)),
     [users]
+  );
+  const userLookup = useMemo(() => {
+    const map = new Map<string, UserRecord>();
+    sortedUsers.forEach((user) => {
+      map.set(user.user, user);
+    });
+    return map;
+  }, [sortedUsers]);
+  const availableCreateUsers = useMemo(
+    () => sortedUsers.filter((user) => !attendees.includes(user.user)),
+    [attendees, sortedUsers]
+  );
+  const availableEditUsers = useMemo(
+    () => sortedUsers.filter((user) => !editForm.attendees.includes(user.user)),
+    [editForm.attendees, sortedUsers]
   );
   const validUsernames = useMemo(
     () => new Set(sortedUsers.map((user) => user.user)),
@@ -862,6 +878,8 @@ export default function CalendarPage() {
             activeCategory={activeCategory}
             viewMode={calendarView}
             onViewModeChange={setCalendarView}
+            workweekOnly={workweekOnly}
+            onWorkweekToggle={() => setWorkweekOnly((prev) => !prev)}
             myEventsOnly={myEventsOnly}
             onMyEventsToggle={() => setMyEventsOnly((prev) => !prev)}
             controlTableEnabled={controlTableEnabled}
@@ -1238,11 +1256,14 @@ export default function CalendarPage() {
                       <p className="text-xs text-slate-400">
                         No hay usuarios registrados.
                       </p>
+                    ) : availableCreateUsers.length === 0 ? (
+                      <p className="text-xs text-slate-400">
+                        No hay usuarios disponibles.
+                      </p>
                     ) : (
                       <div className="flex flex-col gap-2">
-                        {sortedUsers.map((user) => {
+                        {availableCreateUsers.map((user) => {
                           const color = getUserColor(user.user);
-                          const isSelected = attendees.includes(user.user);
                           return (
                             <div
                               key={user.$id}
@@ -1265,7 +1286,6 @@ export default function CalendarPage() {
                               <button
                                 type="button"
                                 onClick={() => handleAddAttendee(user.user, "create")}
-                                disabled={isSelected}
                                 className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-sm font-semibold text-slate-500 transition hover:border-indigo-300 hover:text-indigo-500 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
                                 aria-label={`Añadir ${user.user}`}
                               >
@@ -1288,26 +1308,42 @@ export default function CalendarPage() {
                         Añade asistentes con el botón +.
                       </p>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-col gap-2">
                         {attendees.map((attendee) => {
                           const color = getUserColor(attendee);
+                          const role = userLookup.get(attendee)?.role;
                           return (
-                            <span
+                            <div
                               key={attendee}
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ring-1 ring-inset ${color.badgeClass}`}
+                              className="flex items-center justify-between gap-3"
                             >
-                              {attendee}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`h-2.5 w-2.5 rounded-full ${color.dotClass}`}
+                                  aria-hidden="true"
+                                />
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${color.badgeClass}`}
+                                >
+                                  {attendee}
+                                </span>
+                                {role ? (
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                                    {role}
+                                  </span>
+                                ) : null}
+                              </div>
                               <button
                                 type="button"
                                 onClick={() =>
                                   handleRemoveAttendee(attendee, "create")
                                 }
-                                className="rounded-full px-1 text-xs font-bold text-slate-500 transition hover:text-slate-700"
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-sm font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-500"
                                 aria-label={`Quitar ${attendee}`}
                               >
-                                ×
+                                -
                               </button>
-                            </span>
+                            </div>
                           );
                         })}
                       </div>
@@ -1507,11 +1543,14 @@ export default function CalendarPage() {
                         <p className="text-xs text-slate-400">
                           No hay usuarios registrados.
                         </p>
+                      ) : availableEditUsers.length === 0 ? (
+                        <p className="text-xs text-slate-400">
+                          No hay usuarios disponibles.
+                        </p>
                       ) : (
                         <div className="flex flex-col gap-2">
-                          {sortedUsers.map((user) => {
+                          {availableEditUsers.map((user) => {
                             const color = getUserColor(user.user);
-                            const isSelected = editForm.attendees.includes(user.user);
                             return (
                               <div
                                 key={user.$id}
@@ -1534,7 +1573,6 @@ export default function CalendarPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleAddAttendee(user.user, "edit")}
-                                  disabled={isSelected}
                                   className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-sm font-semibold text-slate-500 transition hover:border-indigo-300 hover:text-indigo-500 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
                                   aria-label={`Añadir ${user.user}`}
                                 >
@@ -1557,26 +1595,42 @@ export default function CalendarPage() {
                           Añade asistentes con el botón +.
                         </p>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-col gap-2">
                           {editForm.attendees.map((attendee) => {
                             const color = getUserColor(attendee);
+                            const role = userLookup.get(attendee)?.role;
                             return (
-                              <span
+                              <div
                                 key={attendee}
-                                className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ring-1 ring-inset ${color.badgeClass}`}
+                                className="flex items-center justify-between gap-3"
                               >
-                                {attendee}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span
+                                    className={`h-2.5 w-2.5 rounded-full ${color.dotClass}`}
+                                    aria-hidden="true"
+                                  />
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${color.badgeClass}`}
+                                  >
+                                    {attendee}
+                                  </span>
+                                  {role ? (
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                                      {role}
+                                    </span>
+                                  ) : null}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() =>
                                     handleRemoveAttendee(attendee, "edit")
                                   }
-                                  className="rounded-full px-1 text-xs font-bold text-slate-500 transition hover:text-slate-700"
+                                  className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-sm font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-500"
                                   aria-label={`Quitar ${attendee}`}
                                 >
-                                  ×
+                                  -
                                 </button>
-                              </span>
+                              </div>
                             );
                           })}
                         </div>
