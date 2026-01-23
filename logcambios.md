@@ -1,5 +1,8 @@
 # Log de cambios
 
+## v0.2.24
+- Exportación CSV adaptada para Excel con separador punto y coma, sin comillas y con saneado de valores.
+
 ## v0.2.23
 - Botones de exportación a Excel (CSV) añadidos en vistas "Mis eventos" y "Tabla de control".
 - Generación de archivos con detalle de eventos según la vista seleccionada.
