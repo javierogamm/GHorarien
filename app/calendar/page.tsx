@@ -85,6 +85,53 @@ const DEFAULT_CERTIFICATION: CertificationOption = "OTROS";
 const MENU_MAX_ITEMS = 8;
 const MENU_PLACEHOLDER = "Gamba con foie;Escalopines;Dulce de leche";
 const MENU_HELP_TEXT = "Añade hasta 8 platos. Se guardan separados por punto y coma (;).";
+const EVENT_NAME_DATE_FORMATTER = new Intl.DateTimeFormat("es-ES", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric"
+});
+
+type AutoEventNameParams = {
+  eventType: EventCategory;
+  establecimiento?: string | null;
+  certificacion?: string | CertificationOption | "";
+  promocion?: string | null;
+  date?: Date | null;
+};
+
+const formatEventNameDate = (date?: Date | null) =>
+  date ? EVENT_NAME_DATE_FORMATTER.format(date) : "";
+
+const buildAutoEventName = ({
+  eventType,
+  establecimiento,
+  certificacion,
+  promocion,
+  date
+}: AutoEventNameParams) => {
+  const formattedDate = formatEventNameDate(date);
+  const trimmedEstablishment = establecimiento?.trim() ?? "";
+  const trimmedPromotion = promocion?.trim() ?? "";
+  const certificationValue =
+    normalizeCertification(certificacion) || DEFAULT_CERTIFICATION;
+  const certificationLabel = CERTIFICATION_LABELS[certificationValue] ?? certificationValue;
+  const categoryLabel = EVENT_CATEGORY_META[eventType]?.label ?? eventType;
+
+  const parts =
+    eventType === "Taller"
+      ? [categoryLabel, certificationLabel, trimmedPromotion, formattedDate]
+      : eventType === "Visita cultural"
+        ? [
+            categoryLabel,
+            trimmedEstablishment,
+            certificationLabel,
+            trimmedPromotion,
+            formattedDate
+          ]
+        : [categoryLabel, trimmedEstablishment, formattedDate];
+
+  return parts.map((part) => part.trim()).filter(Boolean).join(" - ");
+};
 
 const parseMenuItems = (menu?: string | null) =>
   (menu ?? "")
@@ -322,6 +369,8 @@ export default function CalendarPage() {
   const [allEventsLoading, setAllEventsLoading] = useState(false);
   const [allEventsError, setAllEventsError] = useState("");
   const [eventName, setEventName] = useState("");
+  const [eventNameAuto, setEventNameAuto] = useState("");
+  const [eventNameDirty, setEventNameDirty] = useState(false);
   const [eventType, setEventType] = useState<EventCategory>(EVENT_CATEGORIES[0]);
   const [eventStartTime, setEventStartTime] = useState(
     EVENT_CATEGORY_META[EVENT_CATEGORIES[0]].startTime
@@ -337,6 +386,8 @@ export default function CalendarPage() {
   const [attendees, setAttendees] = useState<string[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [bulkEventName, setBulkEventName] = useState("");
+  const [bulkEventNameAuto, setBulkEventNameAuto] = useState("");
+  const [bulkEventNameDirty, setBulkEventNameDirty] = useState(false);
   const [bulkEventType, setBulkEventType] = useState<EventCategory>(EVENT_CATEGORIES[0]);
   const [bulkEventStartTime, setBulkEventStartTime] = useState(
     EVENT_CATEGORY_META[EVENT_CATEGORIES[0]].startTime
@@ -459,6 +510,8 @@ export default function CalendarPage() {
   });
   const [editMenuItems, setEditMenuItems] = useState<string[]>([]);
   const [editMenuSlots, setEditMenuSlots] = useState(0);
+  const [editNameAuto, setEditNameAuto] = useState("");
+  const [editNameDirty, setEditNameDirty] = useState(false);
   const [editStatus, setEditStatus] = useState({
     loading: false,
     error: "",
@@ -574,25 +627,39 @@ export default function CalendarPage() {
       });
       setEditMenuItems([]);
       setEditMenuSlots(0);
+      setEditNameAuto("");
+      setEditNameDirty(false);
       setEditStatus({ loading: false, error: "", success: "" });
       return;
     }
 
     const menuItems = parseMenuItems(selectedEvent.menu);
+    const normalizedCertification =
+      normalizeCertification(selectedEvent.certificacion) || DEFAULT_CERTIFICATION;
+    const selectedDateValue = parseDateWithoutTime(selectedEvent.fecha);
+    const autoName = buildAutoEventName({
+      eventType: selectedEvent.eventType,
+      establecimiento: selectedEvent.establecimiento ?? "",
+      certificacion: normalizedCertification,
+      promocion: selectedEvent.promocion ?? "",
+      date: selectedDateValue
+    });
+    const selectedName = selectedEvent.nombre ?? "";
     setEditForm({
-      nombre: selectedEvent.nombre ?? "",
+      nombre: selectedName,
       eventType: selectedEvent.eventType,
       fecha: formatDateInput(selectedEvent.fecha),
       horaInicio: formatTimeInput(selectedEvent.horaInicio),
       attendees: selectedEvent.attendees,
       notas: selectedEvent.notas ?? "",
       establecimiento: selectedEvent.establecimiento ?? "",
-      certificacion:
-        normalizeCertification(selectedEvent.certificacion) || DEFAULT_CERTIFICATION,
+      certificacion: normalizedCertification,
       promocion: selectedEvent.promocion ?? ""
     });
     setEditMenuItems(menuItems);
     setEditMenuSlots(menuItems.length);
+    setEditNameAuto(autoName);
+    setEditNameDirty(selectedName.trim() !== "" && autoName !== "" && selectedName !== autoName);
     setEditStatus({ loading: false, error: "", success: "" });
   }, [selectedEvent]);
 
@@ -1066,6 +1133,92 @@ export default function CalendarPage() {
     parsedDates.sort((left, right) => left.getTime() - right.getTime());
     return parsedDates;
   }, [bulkSelectedDateKeys]);
+  const bulkPreviewDate = bulkSelectedDates[0] ?? null;
+
+  useEffect(() => {
+    const autoName = buildAutoEventName({
+      eventType,
+      establecimiento: eventEstablishment,
+      certificacion: eventCertificacion,
+      promocion: eventPromocion,
+      date: selectedDate
+    });
+    setEventNameAuto((prev) => (prev === autoName ? prev : autoName));
+    if (!autoName) return;
+    const shouldUpdate =
+      !eventNameDirty || eventName.trim() === "" || eventName === eventNameAuto;
+    if (shouldUpdate && eventName !== autoName) {
+      setEventName(autoName);
+      setEventNameDirty(false);
+    }
+  }, [
+    eventType,
+    eventEstablishment,
+    eventCertificacion,
+    eventPromocion,
+    selectedDate,
+    eventName,
+    eventNameAuto,
+    eventNameDirty
+  ]);
+
+  useEffect(() => {
+    const autoName = buildAutoEventName({
+      eventType: bulkEventType,
+      establecimiento: bulkEventEstablishment,
+      certificacion: bulkEventCertificacion,
+      promocion: bulkEventPromocion,
+      date: bulkPreviewDate
+    });
+    setBulkEventNameAuto((prev) => (prev === autoName ? prev : autoName));
+    if (!autoName) return;
+    const shouldUpdate =
+      !bulkEventNameDirty ||
+      bulkEventName.trim() === "" ||
+      bulkEventName === bulkEventNameAuto;
+    if (shouldUpdate && bulkEventName !== autoName) {
+      setBulkEventName(autoName);
+      setBulkEventNameDirty(false);
+    }
+  }, [
+    bulkEventType,
+    bulkEventEstablishment,
+    bulkEventCertificacion,
+    bulkEventPromocion,
+    bulkPreviewDate,
+    bulkEventName,
+    bulkEventNameAuto,
+    bulkEventNameDirty
+  ]);
+
+  useEffect(() => {
+    if (!selectedEvent) return;
+    const editDate = parseDateInput(editForm.fecha);
+    const autoName = buildAutoEventName({
+      eventType: editForm.eventType,
+      establecimiento: editForm.establecimiento,
+      certificacion: editForm.certificacion,
+      promocion: editForm.promocion,
+      date: editDate
+    });
+    setEditNameAuto((prev) => (prev === autoName ? prev : autoName));
+    if (!autoName) return;
+    const shouldUpdate =
+      !editNameDirty || editForm.nombre.trim() === "" || editForm.nombre === editNameAuto;
+    if (!shouldUpdate || editForm.nombre === autoName) return;
+    setEditForm((prev) => (prev.nombre === autoName ? prev : { ...prev, nombre: autoName }));
+    setEditNameDirty(false);
+  }, [
+    selectedEvent,
+    editForm.eventType,
+    editForm.establecimiento,
+    editForm.certificacion,
+    editForm.promocion,
+    editForm.fecha,
+    editForm.nombre,
+    editNameAuto,
+    editNameDirty
+  ]);
 
   const declareCalendarDays = useMemo(
     () => buildMiniCalendarDays(declareYear, declareMonth),
@@ -1464,7 +1617,16 @@ export default function CalendarPage() {
       return;
     }
 
-    if (!trimmedName) {
+    const autoName = buildAutoEventName({
+      eventType,
+      establecimiento: eventEstablishment,
+      certificacion: eventCertificacion,
+      promocion: eventPromocion,
+      date: selectedDate
+    });
+    const effectiveName = (eventNameDirty ? trimmedName : autoName || trimmedName).trim();
+
+    if (!effectiveName) {
       setFormStatus({
         loading: false,
         error: "Indica el nombre del evento.",
@@ -1541,7 +1703,7 @@ export default function CalendarPage() {
       const duration = 0;
 
       await createEventsForAttendees({
-        nombre: trimmedName,
+        nombre: effectiveName,
         eventType,
         attendees: attendeeList,
         fecha: formatDateTime(startDate),
@@ -1556,6 +1718,8 @@ export default function CalendarPage() {
       });
 
       setEventName("");
+      setEventNameAuto("");
+      setEventNameDirty(false);
       setAttendees([]);
       setEventNotes("");
       setEventCertificacion(DEFAULT_CERTIFICATION);
@@ -1592,19 +1756,30 @@ export default function CalendarPage() {
     const attendeeList = bulkAttendees;
     const dateList = bulkSelectedDates;
 
-    if (!trimmedName) {
+    if (dateList.length === 0) {
       setBulkFormStatus({
         loading: false,
-        error: "Indica el nombre del evento.",
+        error: "Selecciona al menos un día en el calendario.",
         success: ""
       });
       return;
     }
 
-    if (dateList.length === 0) {
+    const autoPreviewName = buildAutoEventName({
+      eventType: bulkEventType,
+      establecimiento: bulkEventEstablishment,
+      certificacion: bulkEventCertificacion,
+      promocion: bulkEventPromocion,
+      date: bulkPreviewDate ?? dateList[0]
+    });
+    const effectivePreviewName = (
+      bulkEventNameDirty ? trimmedName : autoPreviewName || trimmedName
+    ).trim();
+
+    if (!effectivePreviewName) {
       setBulkFormStatus({
         loading: false,
-        error: "Selecciona al menos un día en el calendario.",
+        error: "Indica el nombre del evento.",
         success: ""
       });
       return;
@@ -1684,8 +1859,18 @@ export default function CalendarPage() {
         dateList.map((date) => {
           const startDate = buildEventDateTime(date, bulkEventStartTime);
           const isoDate = formatDateTime(startDate);
+          const autoNameForDate = buildAutoEventName({
+            eventType: bulkEventType,
+            establecimiento: bulkEventEstablishment,
+            certificacion: bulkEventCertificacion,
+            promocion: bulkEventPromocion,
+            date
+          });
+          const nameForDate = bulkEventNameDirty
+            ? effectivePreviewName
+            : autoNameForDate || effectivePreviewName;
           return createEventsForAttendees({
-            nombre: trimmedName,
+            nombre: nameForDate,
             eventType: bulkEventType,
             attendees: attendeeList,
             fecha: isoDate,
@@ -1704,6 +1889,8 @@ export default function CalendarPage() {
 
       const totalEvents = dateList.length * attendeeList.length;
       setBulkEventName("");
+      setBulkEventNameAuto("");
+      setBulkEventNameDirty(false);
       setBulkAttendees([]);
       setBulkEventNotes("");
       setBulkEventCertificacion(DEFAULT_CERTIFICATION);
@@ -1740,6 +1927,9 @@ export default function CalendarPage() {
     setFormStatus({ loading: false, error: "", success: "" });
     const meta = EVENT_CATEGORY_META[eventType];
     setEventStartTime(meta.startTime);
+    setEventName("");
+    setEventNameAuto("");
+    setEventNameDirty(false);
     setAttendees([]);
     setIsCreateModalOpen(true);
     setIsDayDetailModalOpen(false);
@@ -1760,6 +1950,9 @@ export default function CalendarPage() {
     setBulkYear(baseDate.getFullYear());
     setBulkSelectedDateKeys([]);
     setBulkFormStatus({ loading: false, error: "", success: "" });
+    setBulkEventName("");
+    setBulkEventNameAuto("");
+    setBulkEventNameDirty(false);
     setIsBulkCreateModalOpen(true);
     setIsDayDetailModalOpen(false);
   };
@@ -1814,19 +2007,32 @@ export default function CalendarPage() {
     const selectedEventPromotion = selectedEvent.promocion?.trim() ?? "";
     const selectedEventMenu = selectedEvent.menu?.trim() ?? "";
 
-    if (canEditDetails && !trimmedName) {
+    if (!selectedDateValue) {
       setEditStatus({
         loading: false,
-        error: "Indica el nombre del evento.",
+        error: "Selecciona una fecha válida.",
         success: ""
       });
       return;
     }
 
-    if (!selectedDateValue) {
+    const autoName = canEditDetails
+      ? buildAutoEventName({
+          eventType: editForm.eventType,
+          establecimiento: editForm.establecimiento,
+          certificacion: editForm.certificacion,
+          promocion: editForm.promocion,
+          date: selectedDateValue
+        })
+      : "";
+    const effectiveName = canEditDetails
+      ? (editNameDirty ? trimmedName : autoName || trimmedName).trim()
+      : selectedEventName;
+
+    if (canEditDetails && !effectiveName) {
       setEditStatus({
         loading: false,
-        error: "Selecciona una fecha válida.",
+        error: "Indica el nombre del evento.",
         success: ""
       });
       return;
@@ -1902,7 +2108,7 @@ export default function CalendarPage() {
     try {
       const selectedGroupKey = buildEventGroupKey(selectedEvent);
       const payload = {
-        nombre: canEditDetails ? trimmedName : selectedEventName,
+        nombre: effectiveName,
         eventType: canEditDetails ? editForm.eventType : selectedEvent.eventType,
         fecha: formatDateTime(startDate),
         horaInicio: formatDateTime(startDate),
@@ -3487,7 +3693,11 @@ export default function CalendarPage() {
                     className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-400 focus:outline-none"
                     type="text"
                     value={eventName}
-                    onChange={(event) => setEventName(event.target.value)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setEventName(value);
+                      setEventNameDirty(value.trim() !== "" && value !== eventNameAuto);
+                    }}
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-sm font-medium text-slate-600">
@@ -3567,9 +3777,6 @@ export default function CalendarPage() {
                                       >
                                         {user.user}
                                       </span>
-                                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                                        {user.role}
-                                      </span>
                                     </div>
                                     <span className="text-xs text-slate-400">Clic para añadir</span>
                                   </button>
@@ -3590,7 +3797,6 @@ export default function CalendarPage() {
                             <div className="flex flex-col gap-2">
                               {attendees.map((attendee) => {
                                 const color = getUserColor(attendee);
-                                const role = userLookup.get(attendee)?.role;
                                 return (
                                   <button
                                     key={attendee}
@@ -3609,11 +3815,6 @@ export default function CalendarPage() {
                                       >
                                         {attendee}
                                       </span>
-                                      {role ? (
-                                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                                          {role}
-                                        </span>
-                                      ) : null}
                                     </div>
                                     <span className="text-xs text-rose-500">Clic para quitar</span>
                                   </button>
@@ -3811,7 +4012,13 @@ export default function CalendarPage() {
                       className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-400 focus:outline-none"
                       type="text"
                       value={bulkEventName}
-                      onChange={(event) => setBulkEventName(event.target.value)}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setBulkEventName(value);
+                        setBulkEventNameDirty(
+                          value.trim() !== "" && value !== bulkEventNameAuto
+                        );
+                      }}
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-sm font-medium text-slate-600">
@@ -4089,9 +4296,6 @@ export default function CalendarPage() {
                                 >
                                   {user.user}
                                 </span>
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                                  {user.role}
-                                </span>
                               </div>
                               <span className="text-xs text-slate-400">
                                 Clic para añadir
@@ -4116,7 +4320,6 @@ export default function CalendarPage() {
                       <div className="flex flex-col gap-2">
                         {bulkAttendees.map((attendee) => {
                           const color = getUserColor(attendee);
-                          const role = userLookup.get(attendee)?.role;
                           return (
                             <button
                               key={`bulk-selected-${attendee}`}
@@ -4135,11 +4338,6 @@ export default function CalendarPage() {
                                 >
                                   {attendee}
                                 </span>
-                                {role ? (
-                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                                    {role}
-                                  </span>
-                                ) : null}
                               </div>
                               <span className="text-xs text-rose-500">Clic para quitar</span>
                             </button>
@@ -4230,9 +4428,11 @@ export default function CalendarPage() {
                       className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-400 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                       type="text"
                       value={editForm.nombre}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, nombre: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setEditForm((prev) => ({ ...prev, nombre: value }));
+                        setEditNameDirty(value.trim() !== "" && value !== editNameAuto);
+                      }}
                       disabled={!canEditDetails}
                     />
                   </label>
@@ -4329,9 +4529,6 @@ export default function CalendarPage() {
                                         >
                                           {user.user}
                                         </span>
-                                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                                          {user.role}
-                                        </span>
                                       </div>
                                       <span className="text-xs text-slate-400">Clic para añadir</span>
                                     </button>
@@ -4352,7 +4549,6 @@ export default function CalendarPage() {
                               <div className="flex flex-col gap-2">
                                 {editForm.attendees.map((attendee) => {
                                   const color = getUserColor(attendee);
-                                  const role = userLookup.get(attendee)?.role;
                                   return (
                                     <button
                                       key={attendee}
@@ -4372,11 +4568,6 @@ export default function CalendarPage() {
                                         >
                                           {attendee}
                                         </span>
-                                        {role ? (
-                                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                                            {role}
-                                          </span>
-                                        ) : null}
                                       </div>
                                       <span className="text-xs text-rose-500">Clic para quitar</span>
                                     </button>

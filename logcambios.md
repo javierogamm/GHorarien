@@ -1,5 +1,15 @@
 # Log de cambios
 
+## v0.2.37
+- El nombre del evento ahora se genera automáticamente al crear y editar, concatenando según el tipo:
+  - Comida y cena: `Tipo - Establecimiento - fecha`.
+  - Talleres: `Taller - certificación - promoción - fecha`.
+  - Visitas culturales: `Visita cultural - establecimiento - certificación - promoción - fecha`.
+- El nombre autogenerado sigue siendo editable: si el usuario lo modifica manualmente, se respeta.
+- En la creación masiva, el nombre automático se ajusta por cada fecha seleccionada cuando no se ha personalizado el nombre.
+- Se elimina la visualización del **ROL** en las cajas de asistentes de los modales de crear, editar y crear varios eventos.
+- Se consolida la versión de la app en `0.2.37`.
+
 ## v0.2.36
 - El modal de **Crear evento** y el de **Detalle/edición** se amplían al doble de ancho (`max-w-4xl`) manteniendo el scroll vertical.
 - Ambos modales se reorganizan en dos grandes apartados izquierda/derecha:
