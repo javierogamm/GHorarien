@@ -22,13 +22,30 @@ const ensureHorasDeclaradasConfig = () => {
   }
 };
 
-const toNumber = (value: number | string | null | undefined) => {
+const MINUTES_PER_HOUR = 60;
+const LEGACY_HOURS_THRESHOLD = 24;
+
+const parseHorasDeclaradasValue = (value: number | string | null | undefined) => {
   if (typeof value === "number") return value;
   if (typeof value === "string") {
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+};
+
+const toHorasDeclaradasHours = (value: number | string | null | undefined) => {
+  const parsed = parseHorasDeclaradasValue(value);
+  if (!Number.isFinite(parsed)) return 0;
+  if (Number.isInteger(parsed) && parsed > LEGACY_HOURS_THRESHOLD) {
+    return parsed / MINUTES_PER_HOUR;
+  }
+  return parsed;
+};
+
+const toHorasDeclaradasMinutes = (hours: number) => {
+  if (!Number.isFinite(hours)) return 0;
+  return Math.round(hours * MINUTES_PER_HOUR);
 };
 
 export const fetchHorasDeclaradasForUser = async (
@@ -61,7 +78,7 @@ export const fetchHorasDeclaradasForUser = async (
 export const sumHorasDeclaradasForUser = async (username: string): Promise<number> => {
   const documents = await fetchHorasDeclaradasForUser(username);
   return documents.reduce(
-    (total, document) => total + toNumber(document.horasDeclaradas),
+    (total, document) => total + toHorasDeclaradasHours(document.horasDeclaradas),
     0
   );
 };
@@ -73,13 +90,14 @@ export const createHorasDeclaradas = async ({
   fechaHorasDeclaradas
 }: CreateHorasDeclaradasInput): Promise<HorasDeclaradasRecord> => {
   ensureHorasDeclaradasConfig();
+  const horasDeclaradasMinutes = toHorasDeclaradasMinutes(horasDeclaradas);
   return databases.createDocument<HorasDeclaradasRecord>(
     appwriteConfig.databaseId,
     appwriteConfig.horasDeclaradasCollectionId,
     ID.unique(),
     {
       user,
-      horasDeclaradas,
+      horasDeclaradas: horasDeclaradasMinutes,
       motivo,
       fechaHorasDeclaradas
     }

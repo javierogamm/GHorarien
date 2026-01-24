@@ -1,5 +1,9 @@
 # Log de cambios
 
+## v0.2.29
+- Corrección de validación al declarar medias horas guardando `horasDeclaradas` como minutos enteros (0.5h = 30).
+- Suma de horas declaradas compatible con registros anteriores en horas y con los nuevos registros en minutos.
+
 ## v0.2.28
 - Nuevo modal "Declarar horas" dentro de "Cálculo de horas" con slider moderno y dinámico (máximo 7 horas, paso de 0,5).
 - Campo "Motivo" con entrada textual limitada a 200 caracteres y contador visible.
