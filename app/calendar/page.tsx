@@ -52,12 +52,11 @@ const MAX_REASON_LENGTH = 200;
 const DECLARE_RANGE_START_MINUTES = 7 * 60 + 30;
 const DECLARE_RANGE_END_MINUTES = 16 * 60 + 30;
 const DECLARE_START_STEP_MINUTES = 30;
-const DECLARE_END_STEP_MINUTES = 60;
-const DECLARE_MIN_DURATION_MINUTES = 30;
+const DECLARE_END_STEP_MINUTES = DECLARE_START_STEP_MINUTES;
+const DECLARE_MIN_DURATION_MINUTES = 60;
 const DECLARE_MAX_DURATION_MINUTES = MAX_DECLARABLE_HOURS * 60;
-const DECLARE_LAST_FULL_HOUR_MINUTES = Math.floor(DECLARE_RANGE_END_MINUTES / 60) * 60;
-const DECLARE_START_MAX_MINUTES =
-  DECLARE_LAST_FULL_HOUR_MINUTES - DECLARE_MIN_DURATION_MINUTES;
+const DECLARE_MIN_DURATION_HOURS = DECLARE_MIN_DURATION_MINUTES / 60;
+const DECLARE_START_MAX_MINUTES = DECLARE_RANGE_END_MINUTES - DECLARE_MIN_DURATION_MINUTES;
 
 const minutesToTimeString = (totalMinutes: number) => {
   const hours = Math.floor(totalMinutes / 60);
@@ -76,9 +75,6 @@ const roundToDeclareStep = (minutes: number) => {
   return DECLARE_RANGE_START_MINUTES + stepsFromStart * DECLARE_START_STEP_MINUTES;
 };
 
-const roundUpToHour = (minutes: number) => Math.ceil(minutes / 60) * 60;
-const roundDownToHour = (minutes: number) => Math.floor(minutes / 60) * 60;
-
 const clampDeclareStartMinutes = (minutes: number) =>
   clampMinutes(
     roundToDeclareStep(minutes),
@@ -86,28 +82,52 @@ const clampDeclareStartMinutes = (minutes: number) =>
     DECLARE_START_MAX_MINUTES
   );
 
-const getDeclareEndBounds = (startMinutes: number) => {
-  const minimumEndCandidate = startMinutes + DECLARE_MIN_DURATION_MINUTES;
-  const minEndMinutes = roundUpToHour(minimumEndCandidate);
-  const maxEndCandidate = Math.min(
-    DECLARE_LAST_FULL_HOUR_MINUTES,
+const getDeclareMaxDurationHours = (startMinutes: number) => {
+  const maxCandidate = Math.min(
+    DECLARE_RANGE_END_MINUTES,
     startMinutes + DECLARE_MAX_DURATION_MINUTES
   );
-  const maxEndMinutes = Math.max(minEndMinutes, roundDownToHour(maxEndCandidate));
+  const availableHours = Math.floor((maxCandidate - startMinutes) / 60);
+  return Math.max(DECLARE_MIN_DURATION_HOURS, availableHours);
+};
+
+const getDeclareEndBounds = (startMinutes: number) => {
+  const maxDurationHours = getDeclareMaxDurationHours(startMinutes);
+  const minEndMinutes = startMinutes + DECLARE_MIN_DURATION_MINUTES;
+  const maxEndMinutes = startMinutes + maxDurationHours * 60;
   return {
     minEndMinutes,
-    maxEndMinutes
+    maxEndMinutes,
+    maxDurationHours
   };
 };
 
-const deriveDeclareEndMinutes = (startMinutes: number, preferredEndMinutes?: number) => {
-  const { minEndMinutes, maxEndMinutes } = getDeclareEndBounds(startMinutes);
-  const fallbackEnd = Math.min(
-    DECLARE_LAST_FULL_HOUR_MINUTES,
-    startMinutes + DECLARE_MAX_DURATION_MINUTES
+const sanitizeDeclareEndMinutes = (
+  startMinutes: number,
+  endMinutes: number,
+  preferredDurationHours?: number
+) => {
+  const { minEndMinutes, maxEndMinutes, maxDurationHours } = getDeclareEndBounds(startMinutes);
+  const requestedDurationHours =
+    preferredDurationHours ?? Math.round((endMinutes - startMinutes) / 60);
+  const normalizedDurationHours = Math.round(requestedDurationHours);
+  const clampedDurationHours = clampMinutes(
+    normalizedDurationHours,
+    DECLARE_MIN_DURATION_HOURS,
+    maxDurationHours
   );
-  const roundedPreferred = roundDownToHour(preferredEndMinutes ?? fallbackEnd);
-  return clampMinutes(roundedPreferred, minEndMinutes, maxEndMinutes);
+  const alignedEndMinutes = startMinutes + clampedDurationHours * 60;
+  return clampMinutes(alignedEndMinutes, minEndMinutes, maxEndMinutes);
+};
+
+const deriveDeclareEndMinutes = (startMinutes: number, preferredDurationHours?: number) => {
+  const { maxDurationHours } = getDeclareEndBounds(startMinutes);
+  const targetDurationHours = preferredDurationHours ?? maxDurationHours;
+  return sanitizeDeclareEndMinutes(
+    startMinutes,
+    startMinutes + targetDurationHours * 60,
+    targetDurationHours
+  );
 };
 
 const formatDeclareRange = (startMinutes: number, endMinutes: number) =>
@@ -572,19 +592,18 @@ export default function CalendarPage() {
 
   const handleDeclareStartChange = (minutes: number) => {
     const nextStartMinutes = clampDeclareStartMinutes(minutes);
-    const nextEndMinutes = deriveDeclareEndMinutes(nextStartMinutes, declareEndMinutes);
+    const preferredDurationHours = Math.max(
+      DECLARE_MIN_DURATION_HOURS,
+      Math.round((declareEndMinutes - declareStartMinutes) / 60)
+    );
+    const nextEndMinutes = deriveDeclareEndMinutes(nextStartMinutes, preferredDurationHours);
     setDeclareStartMinutes(nextStartMinutes);
     setDeclareEndMinutes(nextEndMinutes);
     clearDeclareMessages();
   };
 
   const handleDeclareEndChange = (minutes: number) => {
-    const { minEndMinutes, maxEndMinutes } = getDeclareEndBounds(declareStartMinutes);
-    const nextEndMinutes = clampMinutes(
-      roundDownToHour(minutes),
-      minEndMinutes,
-      maxEndMinutes
-    );
+    const nextEndMinutes = sanitizeDeclareEndMinutes(declareStartMinutes, minutes);
     setDeclareEndMinutes(nextEndMinutes);
     clearDeclareMessages();
   };
@@ -617,20 +636,20 @@ export default function CalendarPage() {
     }
 
     const sanitizedDeclareStartMinutes = clampDeclareStartMinutes(declareStartMinutes);
-    const { minEndMinutes, maxEndMinutes } = getDeclareEndBounds(
-      sanitizedDeclareStartMinutes
+    const preferredDurationHours = Math.max(
+      DECLARE_MIN_DURATION_HOURS,
+      Math.round((declareEndMinutes - declareStartMinutes) / 60)
     );
-    const sanitizedDeclareEndMinutes = clampMinutes(
-      roundDownToHour(declareEndMinutes),
-      minEndMinutes,
-      maxEndMinutes
+    const sanitizedDeclareEndMinutes = deriveDeclareEndMinutes(
+      sanitizedDeclareStartMinutes,
+      preferredDurationHours
     );
     const declaredDurationMinutes = sanitizedDeclareEndMinutes - sanitizedDeclareStartMinutes;
 
     if (declaredDurationMinutes < DECLARE_MIN_DURATION_MINUTES) {
       setDeclareStatus({
         loading: false,
-        error: "Selecciona al menos media hora dentro del rango permitido.",
+        error: "Selecciona al menos 1 hora dentro del rango permitido.",
         success: ""
       });
       return;
@@ -2501,8 +2520,8 @@ export default function CalendarPage() {
                 Declarar horas
               </h3>
               <p className="mt-1 text-sm text-slate-500">
-                Selecciona inicio (cada 30 min) y fin (en horas enteras) dentro
-                de la ventana diaria, con un máximo de {MAX_DECLARABLE_HOURS} h.
+                Selecciona inicio (cada 30 min) y fin en horas enteras desde el
+                inicio dentro de la ventana diaria, con un máximo de {MAX_DECLARABLE_HOURS} h.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -2570,8 +2589,8 @@ export default function CalendarPage() {
                   />
                   <input
                     type="range"
-                    min={declareMinEndMinutes}
-                    max={declareMaxEndMinutes}
+                    min={DECLARE_RANGE_START_MINUTES}
+                    max={DECLARE_RANGE_END_MINUTES}
                     step={DECLARE_END_STEP_MINUTES}
                     value={declareEndMinutes}
                     onChange={(event) => handleDeclareEndChange(Number(event.target.value))}
@@ -2589,7 +2608,7 @@ export default function CalendarPage() {
                 </div>
                 <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   <span>Inicio cada 30 min</span>
-                  <span>Fin en horas enteras</span>
+                  <span>Fin en horas enteras desde inicio</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                   <span>Ventana {declareWindowLabel}</span>

@@ -1,5 +1,10 @@
 # Log de cambios
 
+## v0.2.32
+- El punto final ahora siempre se alinea a horas enteras respecto al inicio (p.ej. 07:30 → 08:30, 09:30, etc.), eliminando duraciones de media hora.
+- Se recalculan y limitan los extremos del rango para respetar la ventana 07:30-16:30 con pasos de 1 hora desde el inicio.
+- Se corrige el desajuste visual del slider usando el rango completo como base del control, haciendo que el coloreado coincida con el punto derecho.
+
 ## v0.2.31
 - El slider de "Declarar horas" se rehizo como rango con dos puntos (inicio y fin) dentro de la ventana 07:30-16:30.
 - El punto de inicio ahora permite seleccionar cualquier hora o media hora.
