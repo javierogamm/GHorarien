@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.2.31
+- El slider de "Declarar horas" se rehizo como rango con dos puntos (inicio y fin) dentro de la ventana 07:30-16:30.
+- El punto de inicio ahora permite seleccionar cualquier hora o media hora.
+- El punto final se mueve únicamente en horas enteras y se ajusta dinámicamente según el inicio.
+- Se limita el rango declarado a un máximo de 7 horas y se recalculan automáticamente `horasDeclaradas` y `horasDeclaradasRango`.
+
 ## v0.2.30
 - El slider de "Declarar horas" ahora selecciona la hora de inicio dentro de la ventana 07:30-16:30, manteniendo una duración fija de 7 horas enteras.
 - Se muestra el rango calculado (inicio-fin) y la ventana diaria permitida directamente en el modal para mayor claridad.
