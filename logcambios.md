@@ -1,5 +1,13 @@
 # Log de cambios
 
+## v0.2.33
+- Eliminada la referencia visual a la "Escala máxima" en la cabecera del gráfico de barras de horas.
+- Al guardar en "Declarar horas" el modal ahora se cierra automáticamente, tanto en altas como en ediciones.
+- Se añade bajo el gráfico un listado de horas declaradas con: Día, nº de horas, Motivo y Fecha del último cambio.
+- El listado permite editar cada registro, abriendo el modal con sus datos precargados y reescribiendo la declaración al guardar.
+- El listado permite eliminar declaraciones de horas con confirmación previa.
+- Se amplía el servicio `horasDeclaradasService` con utilidades para normalizar horas declaradas y operaciones de actualización/eliminación.
+
 ## v0.2.32
 - El punto final ahora siempre se alinea a horas enteras respecto al inicio (p.ej. 07:30 → 08:30, 09:30, etc.), eliminando duraciones de media hora.
 - Se recalculan y limitan los extremos del rango para respetar la ventana 07:30-16:30 con pasos de 1 hora desde el inicio.

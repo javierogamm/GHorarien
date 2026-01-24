@@ -17,6 +17,13 @@ type CreateHorasDeclaradasInput = {
   fechaHorasDeclaradas: string;
 };
 
+type UpdateHorasDeclaradasInput = {
+  horasDeclaradas: number;
+  horasDeclaradasRango: string;
+  motivo: string;
+  fechaHorasDeclaradas: string;
+};
+
 const ensureHorasDeclaradasConfig = () => {
   ensureAppwriteConfig();
   if (!appwriteConfig.horasDeclaradasCollectionId) {
@@ -24,7 +31,7 @@ const ensureHorasDeclaradasConfig = () => {
   }
 };
 
-const toNumber = (value: number | string | null | undefined) => {
+export const toHorasDeclaradasNumber = (value: number | string | null | undefined) => {
   if (typeof value === "number") return value;
   if (typeof value === "string") {
     const parsed = Number.parseFloat(value);
@@ -63,7 +70,7 @@ export const fetchHorasDeclaradasForUser = async (
 export const sumHorasDeclaradasForUser = async (username: string): Promise<number> => {
   const documents = await fetchHorasDeclaradasForUser(username);
   return documents.reduce(
-    (total, document) => total + toNumber(document.horasDeclaradas),
+    (total, document) => total + toHorasDeclaradasNumber(document.horasDeclaradas),
     0
   );
 };
@@ -87,5 +94,37 @@ export const createHorasDeclaradas = async ({
       motivo,
       fechaHorasDeclaradas
     }
+  );
+};
+
+export const updateHorasDeclaradas = async (
+  documentId: string,
+  {
+    horasDeclaradas,
+    horasDeclaradasRango,
+    motivo,
+    fechaHorasDeclaradas
+  }: UpdateHorasDeclaradasInput
+): Promise<HorasDeclaradasRecord> => {
+  ensureHorasDeclaradasConfig();
+  return databases.updateDocument<HorasDeclaradasRecord>(
+    appwriteConfig.databaseId,
+    appwriteConfig.horasDeclaradasCollectionId,
+    documentId,
+    {
+      horasDeclaradas,
+      horasDeclaradasRango,
+      motivo,
+      fechaHorasDeclaradas
+    }
+  );
+};
+
+export const deleteHorasDeclaradas = async (documentId: string): Promise<void> => {
+  ensureHorasDeclaradasConfig();
+  await databases.deleteDocument(
+    appwriteConfig.databaseId,
+    appwriteConfig.horasDeclaradasCollectionId,
+    documentId
   );
 };
