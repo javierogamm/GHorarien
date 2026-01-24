@@ -7,6 +7,7 @@ export type UserRecord = Models.Document & {
   user: string;
   pass: string;
   role: UserRole;
+  horasObtenidas?: number;
 };
 
 export const validateUserCredentials = async (
@@ -42,4 +43,17 @@ export const fetchUsers = async (): Promise<UserRecord[]> => {
   } while (fetched === limit);
 
   return allDocuments;
+};
+
+export const updateUserHorasObtenidas = async (
+  documentId: string,
+  horasObtenidas: number
+): Promise<UserRecord> => {
+  ensureAppwriteConfig();
+  return databases.updateDocument<UserRecord>(
+    appwriteConfig.databaseId,
+    appwriteConfig.usersCollectionId,
+    documentId,
+    { horasObtenidas }
+  );
 };

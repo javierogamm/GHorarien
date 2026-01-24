@@ -17,7 +17,12 @@ import {
   fetchEstablishments,
   updateEvent
 } from "../../services/eventsService";
-import { fetchUsers, type UserRecord } from "../../services/usersService";
+import { sumHorasDeclaradasForUser } from "../../services/horasDeclaradasService";
+import {
+  fetchUsers,
+  type UserRecord,
+  updateUserHorasObtenidas
+} from "../../services/usersService";
 import { parseDateWithoutTime } from "../../utils/calendarDates";
 import type { CalendarEventDisplay } from "../../components/calendarTypes";
 
@@ -37,6 +42,7 @@ const MONTH_NAMES = [
   "Noviembre",
   "Diciembre"
 ];
+const HOURS_PER_EVENT = 3;
 
 const formatDateTime = (date: Date) => {
   const pad = (value: number, length = 2) => String(value).padStart(length, "0");
@@ -180,6 +186,18 @@ export default function CalendarPage() {
   const [workweekOnly, setWorkweekOnly] = useState(true);
   const [myEventsOnly, setMyEventsOnly] = useState(false);
   const [controlTableEnabled, setControlTableEnabled] = useState(false);
+  const [hoursCalculationEnabled, setHoursCalculationEnabled] = useState(false);
+  const [hoursRefreshToken, setHoursRefreshToken] = useState(0);
+  const [hoursSummary, setHoursSummary] = useState({
+    obtained: 0,
+    declared: 0,
+    remaining: 0
+  });
+  const [hoursStatus, setHoursStatus] = useState({
+    loading: false,
+    error: "",
+    lastUpdated: ""
+  });
   const [weekAnchorDate, setWeekAnchorDate] = useState(today);
   const [activeCategory, setActiveCategory] = useState<EventCategory | null>(null);
   const [establishmentSearch, setEstablishmentSearch] = useState("");
@@ -399,6 +417,7 @@ export default function CalendarPage() {
       const next = !prev;
       if (next) {
         setControlTableEnabled(false);
+        setHoursCalculationEnabled(false);
       }
       return next;
     });
@@ -409,15 +428,48 @@ export default function CalendarPage() {
       const next = !prev;
       if (next) {
         setMyEventsOnly(false);
+        setHoursCalculationEnabled(false);
       }
       return next;
     });
+  };
+
+  const triggerHoursRecalculation = useCallback(() => {
+    setHoursStatus({
+      loading: true,
+      error: "",
+      lastUpdated: ""
+    });
+    setHoursRefreshToken((prev) => prev + 1);
+  }, []);
+
+  const handleHoursCalculationOpen = () => {
+    setMyEventsOnly(false);
+    setControlTableEnabled(false);
+    setHoursCalculationEnabled(true);
+    triggerHoursRecalculation();
+  };
+
+  const handleHoursCalculationBackToMyEvents = () => {
+    setHoursCalculationEnabled(false);
+    setMyEventsOnly(true);
+  };
+
+  const handleHoursCalculationBackToCalendar = () => {
+    setHoursCalculationEnabled(false);
+    setMyEventsOnly(false);
   };
 
   const handleLogout = () => {
     window.localStorage.removeItem(SESSION_KEY);
     router.push("/login");
   };
+
+  const getErrorMessage = useCallback(
+    (error: unknown, fallback: string) =>
+      error instanceof Error && error.message ? error.message : fallback,
+    []
+  );
 
   const formatDisplayDate = (value?: string) => {
     if (!value) return "—";
@@ -441,6 +493,12 @@ export default function CalendarPage() {
       minute: "2-digit"
     });
   };
+
+  const formatHoursValue = (value: number) =>
+    value.toLocaleString("es-ES", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    });
 
   const formatDateInput = (value?: string) => {
     if (!value) return "";
@@ -1241,6 +1299,11 @@ export default function CalendarPage() {
     setActiveCategory((prev) => (prev === category ? null : category));
   };
 
+  const currentUserRecord = useMemo(
+    () => users.find((entry) => entry.user === username) ?? null,
+    [users, username]
+  );
+
   const calendarEvents = useMemo(
     () =>
       allEvents.filter((eventItem) => {
@@ -1293,6 +1356,8 @@ export default function CalendarPage() {
       });
   }, [allEvents, username]);
 
+  const obtainedHours = useMemo(() => myEvents.length * HOURS_PER_EVENT, [myEvents]);
+
   const myEventsByYear = useMemo(() => {
     const yearMap = new Map<number, Map<number, MyEventGroup[]>>();
 
@@ -1324,6 +1389,79 @@ export default function CalendarPage() {
           }))
       }));
   }, [myEvents]);
+
+  useEffect(() => {
+    if (!hoursCalculationEnabled || !username) return;
+    if (usersLoading || allEventsLoading) return;
+    if (!currentUserRecord) {
+      setHoursStatus({
+        loading: false,
+        error: "No se encontró tu usuario para calcular las horas.",
+        lastUpdated: ""
+      });
+      return;
+    }
+
+    let cancelled = false;
+
+    const calculateHours = async () => {
+      setHoursStatus({
+        loading: true,
+        error: "",
+        lastUpdated: ""
+      });
+      try {
+        const declaredHours = await sumHorasDeclaradasForUser(username);
+        if (cancelled) return;
+        const remainingHours = obtainedHours - declaredHours;
+
+        if (currentUserRecord.horasObtenidas !== obtainedHours) {
+          await updateUserHorasObtenidas(currentUserRecord.$id, obtainedHours);
+          if (cancelled) return;
+          setUsers((prev) =>
+            prev.map((userItem) =>
+              userItem.$id === currentUserRecord.$id
+                ? { ...userItem, horasObtenidas: obtainedHours }
+                : userItem
+            )
+          );
+        }
+
+        setHoursSummary({
+          obtained: obtainedHours,
+          declared: declaredHours,
+          remaining: remainingHours
+        });
+        setHoursStatus({
+          loading: false,
+          error: "",
+          lastUpdated: new Date().toISOString()
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setHoursStatus({
+          loading: false,
+          error: getErrorMessage(error, "No se pudieron calcular las horas."),
+          lastUpdated: ""
+        });
+      }
+    };
+
+    calculateHours();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    allEventsLoading,
+    currentUserRecord,
+    getErrorMessage,
+    hoursCalculationEnabled,
+    hoursRefreshToken,
+    obtainedHours,
+    username,
+    usersLoading
+  ]);
 
   const controlTableByUser = useMemo(() => {
     const userMap = new Map<
@@ -1415,6 +1553,111 @@ export default function CalendarPage() {
           <div className="flex items-center justify-center rounded-3xl border border-white/70 bg-white/70 px-6 py-16 text-sm font-semibold text-slate-500 shadow-soft">
             Cargando eventos...
           </div>
+        ) : hoursCalculationEnabled ? (
+          <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-soft backdrop-blur">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Cálculo de horas
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Recuento automático: cada evento asistido suma {HOURS_PER_EVENT}{" "}
+                  horas y se guarda en tu perfil.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={triggerHoursRecalculation}
+                  disabled={hoursStatus.loading}
+                  className={`rounded-full border px-4 py-2 text-xs font-semibold text-white shadow-sm transition ${
+                    hoursStatus.loading
+                      ? "cursor-not-allowed border-slate-200 bg-slate-300"
+                      : "border-amber-200 bg-amber-500 hover:-translate-y-0.5 hover:bg-amber-600"
+                  }`}
+                >
+                  {hoursStatus.loading ? "Recalculando..." : "Recalcular"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleHoursCalculationBackToMyEvents}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-indigo-200 hover:text-indigo-600"
+                >
+                  Volver a mis eventos
+                </button>
+                <button
+                  type="button"
+                  onClick={handleHoursCalculationBackToCalendar}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-indigo-200 hover:text-indigo-600"
+                >
+                  Volver al calendario
+                </button>
+              </div>
+            </div>
+
+            {hoursStatus.error ? (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                {hoursStatus.error}
+              </div>
+            ) : null}
+
+            {hoursStatus.loading ? (
+              <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-600">
+                Recalculando horas y actualizando tu usuario...
+              </div>
+            ) : hoursStatus.lastUpdated ? (
+              <p className="mt-4 text-xs text-slate-400">
+                Última actualización:{" "}
+                {new Date(hoursStatus.lastUpdated).toLocaleString("es-ES", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit"
+                })}
+              </p>
+            ) : null}
+
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <article className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                  Horas obtenidas
+                </p>
+                <p className="text-3xl font-semibold text-emerald-700">
+                  {formatHoursValue(hoursSummary.obtained)}
+                </p>
+                <p className="text-xs text-emerald-600/80">
+                  {myEvents.length} eventos × {HOURS_PER_EVENT} horas
+                </p>
+              </article>
+              <article className="flex flex-col gap-2 rounded-2xl border border-sky-100 bg-sky-50/70 p-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-sky-600">
+                  Horas declaradas
+                </p>
+                <p className="text-3xl font-semibold text-sky-700">
+                  {formatHoursValue(hoursSummary.declared)}
+                </p>
+                <p className="text-xs text-sky-600/80">
+                  Suma de tus registros en horasDeclaradas
+                </p>
+              </article>
+              <article className="flex flex-col gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+                  Horas restantes
+                </p>
+                <p
+                  className={`text-3xl font-semibold ${
+                    hoursSummary.remaining < 0 ? "text-rose-600" : "text-indigo-700"
+                  }`}
+                >
+                  {formatHoursValue(hoursSummary.remaining)}
+                </p>
+                <p className="text-xs text-indigo-600/80">
+                  Horas obtenidas − horas declaradas
+                </p>
+              </article>
+            </div>
+          </section>
         ) : myEventsOnly ? (
           <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-soft backdrop-blur">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1439,6 +1682,13 @@ export default function CalendarPage() {
                   }`}
                 >
                   Exportar Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleHoursCalculationOpen}
+                  className="rounded-full border border-amber-200 bg-amber-500 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-amber-600"
+                >
+                  Cálculo de horas
                 </button>
                 <button
                   type="button"
@@ -1821,7 +2071,10 @@ export default function CalendarPage() {
           />
         )}
 
-        {showControlTable && !myEventsOnly && !controlTableEnabled ? (
+        {showControlTable &&
+        !myEventsOnly &&
+        !controlTableEnabled &&
+        !hoursCalculationEnabled ? (
           <div className="flex items-center justify-end text-xs text-slate-400">
             Usa el botón &quot;Tabla de control&quot; para ver el resumen agrupado.
           </div>
