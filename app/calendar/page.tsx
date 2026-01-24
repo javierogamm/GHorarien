@@ -3774,7 +3774,6 @@ export default function CalendarPage() {
                                         {user.user}
                                       </span>
                                     </div>
-                                    <span className="text-xs text-slate-400">Clic para añadir</span>
                                   </button>
                                 );
                               })}
@@ -3808,7 +3807,6 @@ export default function CalendarPage() {
                                         {attendee}
                                       </span>
                                     </div>
-                                    <span className="text-xs text-rose-500">Clic para quitar</span>
                                   </button>
                                 );
                               })}
@@ -4285,9 +4283,6 @@ export default function CalendarPage() {
                                   {user.user}
                                 </span>
                               </div>
-                              <span className="text-xs text-slate-400">
-                                Clic para añadir
-                              </span>
                             </button>
                           );
                         })}
@@ -4323,7 +4318,6 @@ export default function CalendarPage() {
                                   {attendee}
                                 </span>
                               </div>
-                              <span className="text-xs text-rose-500">Clic para quitar</span>
                             </button>
                           );
                         })}
@@ -4510,7 +4504,6 @@ export default function CalendarPage() {
                                           {user.user}
                                         </span>
                                       </div>
-                                      <span className="text-xs text-slate-400">Clic para añadir</span>
                                     </button>
                                   );
                                 })}
@@ -4545,7 +4538,6 @@ export default function CalendarPage() {
                                           {attendee}
                                         </span>
                                       </div>
-                                      <span className="text-xs text-rose-500">Clic para quitar</span>
                                     </button>
                                   );
                                 })}
