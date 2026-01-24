@@ -1,5 +1,9 @@
 # Log de cambios
 
+## v0.2.39
+- Se eliminan los textos de ayuda “Clic para añadir” y “Clic para quitar” en el editor de eventos (crear, editar y creación masiva), dejando la interacción más limpia.
+- Se consolida la versión de la app en `0.2.39`.
+
 ## v0.2.38
 - Se elimina el puntito de color junto al nombre en las listas de usuarios al añadir/quitar asistentes (crear, editar y creación masiva), dejando solo la pastilla con el nombre.
 - La cabecera del calendario se reorganiza:
