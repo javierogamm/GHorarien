@@ -19,7 +19,11 @@ import {
 } from "../../services/eventsService";
 import {
   createHorasDeclaradas,
-  sumHorasDeclaradasForUser
+  deleteHorasDeclaradas,
+  fetchHorasDeclaradasForUser,
+  type HorasDeclaradasRecord,
+  toHorasDeclaradasNumber,
+  updateHorasDeclaradas
 } from "../../services/horasDeclaradasService";
 import {
   fetchUsers,
@@ -132,6 +136,50 @@ const deriveDeclareEndMinutes = (startMinutes: number, preferredDurationHours?: 
 
 const formatDeclareRange = (startMinutes: number, endMinutes: number) =>
   `${minutesToTimeString(startMinutes)}-${minutesToTimeString(endMinutes)}`;
+
+const parseDeclareRangeMinutes = (
+  range: string | undefined,
+  fallbackHours: number | undefined
+) => {
+  const normalizedFallbackHours = Math.max(
+    DECLARE_MIN_DURATION_HOURS,
+    Math.round(fallbackHours ?? DECLARE_MIN_DURATION_HOURS)
+  );
+  const fallbackStartMinutes = DECLARE_RANGE_START_MINUTES;
+
+  if (!range) {
+    return {
+      startMinutes: fallbackStartMinutes,
+      endMinutes: deriveDeclareEndMinutes(fallbackStartMinutes, normalizedFallbackHours)
+    };
+  }
+
+  const match = range.match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
+  if (!match) {
+    return {
+      startMinutes: fallbackStartMinutes,
+      endMinutes: deriveDeclareEndMinutes(fallbackStartMinutes, normalizedFallbackHours)
+    };
+  }
+
+  const [, startHours, startMinutesPart, endHours, endMinutesPart] = match;
+  const parsedStartMinutes = clampDeclareStartMinutes(
+    Number(startHours) * 60 + Number(startMinutesPart)
+  );
+  const parsedEndMinutesRaw = Number(endHours) * 60 + Number(endMinutesPart);
+  const parsedDurationHours = Math.round((parsedEndMinutesRaw - parsedStartMinutes) / 60);
+  const preferredDurationHours =
+    parsedDurationHours > 0 ? parsedDurationHours : normalizedFallbackHours;
+
+  return {
+    startMinutes: parsedStartMinutes,
+    endMinutes: sanitizeDeclareEndMinutes(
+      parsedStartMinutes,
+      parsedEndMinutesRaw,
+      preferredDurationHours
+    )
+  };
+};
 
 const formatDateTime = (date: Date) => {
   const pad = (value: number, length = 2) => String(value).padStart(length, "0");
@@ -287,6 +335,15 @@ export default function CalendarPage() {
     error: "",
     lastUpdated: ""
   });
+  const [declaredHoursRecords, setDeclaredHoursRecords] = useState<HorasDeclaradasRecord[]>(
+    []
+  );
+  const [declaredHoursStatus, setDeclaredHoursStatus] = useState({
+    loading: false,
+    error: ""
+  });
+  const [editingDeclaredRecord, setEditingDeclaredRecord] =
+    useState<HorasDeclaradasRecord | null>(null);
   const [isDeclareHoursModalOpen, setIsDeclareHoursModalOpen] = useState(false);
   const [declareStartMinutes, setDeclareStartMinutes] = useState(
     DECLARE_RANGE_START_MINUTES
@@ -559,6 +616,7 @@ export default function CalendarPage() {
   const openDeclareHoursModal = () => {
     const baseDate = new Date(today);
     const baseStartMinutes = DECLARE_RANGE_START_MINUTES;
+    setEditingDeclaredRecord(null);
     setDeclareStartMinutes(baseStartMinutes);
     setDeclareEndMinutes(deriveDeclareEndMinutes(baseStartMinutes));
     setDeclareHoursReason("");
@@ -573,8 +631,36 @@ export default function CalendarPage() {
     setIsDeclareHoursModalOpen(true);
   };
 
+  const openDeclareHoursModalForEdit = (record: HorasDeclaradasRecord) => {
+    const parsedRecordDate = parseDateWithoutTime(record.fechaHorasDeclaradas);
+    const baseDate =
+      parsedRecordDate && !Number.isNaN(parsedRecordDate.getTime())
+        ? parsedRecordDate
+        : new Date(today);
+    const recordHours = toHorasDeclaradasNumber(record.horasDeclaradas);
+    const { startMinutes, endMinutes } = parseDeclareRangeMinutes(
+      record.horasDeclaradasRango,
+      recordHours
+    );
+
+    setEditingDeclaredRecord(record);
+    setDeclareStartMinutes(startMinutes);
+    setDeclareEndMinutes(endMinutes);
+    setDeclareHoursReason(record.motivo ?? "");
+    setDeclareMonth(baseDate.getMonth());
+    setDeclareYear(baseDate.getFullYear());
+    setDeclareSelectedDateKey(formatDateKey(baseDate));
+    setDeclareStatus({
+      loading: false,
+      error: "",
+      success: ""
+    });
+    setIsDeclareHoursModalOpen(true);
+  };
+
   const closeDeclareHoursModal = () => {
     setIsDeclareHoursModalOpen(false);
+    setEditingDeclaredRecord(null);
     setDeclareStatus((prev) =>
       prev.loading ? { ...prev, loading: false } : prev
     );
@@ -688,25 +774,63 @@ export default function CalendarPage() {
         0,
         0
       );
-      await createHorasDeclaradas({
-        user: username,
+      const declarationPayload = {
         horasDeclaradas: sanitizedDeclareHoursValue,
         horasDeclaradasRango,
         motivo: declareHoursReason.trim(),
         fechaHorasDeclaradas: formatDateTime(declarationDate)
-      });
+      };
+
+      if (editingDeclaredRecord) {
+        await updateHorasDeclaradas(editingDeclaredRecord.$id, declarationPayload);
+      } else {
+        await createHorasDeclaradas({
+          user: username,
+          ...declarationPayload
+        });
+      }
 
       setDeclareStatus({
         loading: false,
         error: "",
-        success: "Horas declaradas correctamente."
+        success: editingDeclaredRecord
+          ? "Horas declaradas actualizadas correctamente."
+          : "Horas declaradas correctamente."
       });
+      closeDeclareHoursModal();
       triggerHoursRecalculation();
     } catch (error) {
       setDeclareStatus({
         loading: false,
         error: getErrorMessage(error, "No se pudieron declarar las horas."),
         success: ""
+      });
+    }
+  };
+
+  const handleDeclaredHoursDelete = async (record: HorasDeclaradasRecord) => {
+    if (!username) return;
+    const confirmDelete = window.confirm(
+      "¿Seguro que quieres eliminar esta declaración de horas?"
+    );
+    if (!confirmDelete) return;
+
+    setDeclaredHoursStatus({
+      loading: true,
+      error: ""
+    });
+
+    try {
+      await deleteHorasDeclaradas(record.$id);
+      setDeclaredHoursStatus({
+        loading: false,
+        error: ""
+      });
+      triggerHoursRecalculation();
+    } catch (error) {
+      setDeclaredHoursStatus({
+        loading: false,
+        error: getErrorMessage(error, "No se pudo eliminar la declaración.")
       });
     }
   };
@@ -793,6 +917,18 @@ export default function CalendarPage() {
     return parsed.toLocaleDateString("es-ES", {
       day: "2-digit",
       month: "2-digit"
+    });
+  };
+
+  const formatDeclaredDay = (value?: string) => {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "—";
+    return parsed.toLocaleDateString("es-ES", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
     });
   };
 
@@ -900,6 +1036,18 @@ export default function CalendarPage() {
     }
   ] as const;
   const hoursChartScaleSteps = [0, 0.25, 0.5, 0.75, 1] as const;
+  const declaredHoursRows = declaredHoursRecords.map((record) => {
+    const hoursValue = toHorasDeclaradasNumber(record.horasDeclaradas);
+    return {
+      id: record.$id,
+      hoursLabel: formatHoursValue(hoursValue),
+      rangeLabel: record.horasDeclaradasRango ?? "",
+      dayLabel: formatDeclaredDay(record.fechaHorasDeclaradas),
+      reasonLabel: record.motivo?.trim() || "—",
+      lastUpdatedLabel: formatDisplayDate(record.$updatedAt),
+      record
+    };
+  });
 
   const handleBulkDateToggle = (date: Date) => {
     const key = formatDateKey(date);
@@ -1725,6 +1873,11 @@ export default function CalendarPage() {
     if (!hoursCalculationEnabled || !username) return;
     if (usersLoading || allEventsLoading) return;
     if (!currentUserRecord) {
+      setDeclaredHoursRecords([]);
+      setDeclaredHoursStatus({
+        loading: false,
+        error: ""
+      });
       setHoursStatus({
         loading: false,
         error: "No se encontró tu usuario para calcular las horas.",
@@ -1741,9 +1894,26 @@ export default function CalendarPage() {
         error: "",
         lastUpdated: ""
       });
+      setDeclaredHoursStatus({
+        loading: true,
+        error: ""
+      });
       try {
-        const declaredHours = await sumHorasDeclaradasForUser(username);
+        const declarations = await fetchHorasDeclaradasForUser(username);
         if (cancelled) return;
+        const sortedDeclarations = [...declarations].sort((a, b) => {
+          const updatedAtDiff =
+            new Date(b.$updatedAt).getTime() - new Date(a.$updatedAt).getTime();
+          if (updatedAtDiff !== 0) return updatedAtDiff;
+          return (
+            new Date(b.fechaHorasDeclaradas ?? 0).getTime() -
+            new Date(a.fechaHorasDeclaradas ?? 0).getTime()
+          );
+        });
+        const declaredHours = sortedDeclarations.reduce(
+          (total, document) => total + toHorasDeclaradasNumber(document.horasDeclaradas),
+          0
+        );
         const remainingHours = obtainedHours - declaredHours;
 
         const storedObtainedHours = parseHorasObtenidas(currentUserRecord.horasObtenidas);
@@ -1765,6 +1935,11 @@ export default function CalendarPage() {
           declared: declaredHours,
           remaining: remainingHours
         });
+        setDeclaredHoursRecords(sortedDeclarations);
+        setDeclaredHoursStatus({
+          loading: false,
+          error: ""
+        });
         setHoursStatus({
           loading: false,
           error: "",
@@ -1772,6 +1947,10 @@ export default function CalendarPage() {
         });
       } catch (error) {
         if (cancelled) return;
+        setDeclaredHoursStatus({
+          loading: false,
+          error: getErrorMessage(error, "No se pudieron cargar las horas declaradas.")
+        });
         setHoursStatus({
           loading: false,
           error: getErrorMessage(error, "No se pudieron calcular las horas."),
@@ -1999,18 +2178,14 @@ export default function CalendarPage() {
             </div>
 
             <div className="mt-8 rounded-[32px] border border-slate-200/80 bg-white/80 p-6 shadow-inner">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-wrap items-start gap-3">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900">
                     Comparativa de horas
                   </h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    Las columnas usan un máximo de horas obtenidas + 10 para que
-                    el avance se vea claro.
+                    Visualiza tus horas obtenidas frente a las horas declaradas.
                   </p>
-                </div>
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Escala máxima: {formatHoursValue(hoursChartMax)} h
                 </div>
               </div>
 
@@ -2076,6 +2251,105 @@ export default function CalendarPage() {
                     })}
                   </div>
                 </div>
+              </div>
+
+              <div className="mt-10">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-base font-semibold text-slate-900">
+                      Horas declaradas
+                    </h4>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Día, horas declaradas y estado de cada registro.
+                    </p>
+                  </div>
+                  {declaredHoursStatus.loading ? (
+                    <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Actualizando...
+                    </div>
+                  ) : null}
+                </div>
+
+                {declaredHoursStatus.error ? (
+                  <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                    {declaredHoursStatus.error}
+                  </div>
+                ) : null}
+
+                {declaredHoursRows.length === 0 && !declaredHoursStatus.loading ? (
+                  <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-8 text-center text-sm text-slate-500">
+                    Aún no has declarado horas.
+                  </div>
+                ) : declaredHoursRows.length > 0 ? (
+                  <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold">Día</th>
+                            <th className="px-4 py-3 text-left font-semibold">Nº de horas</th>
+                            <th className="px-4 py-3 text-left font-semibold">Motivo</th>
+                            <th className="px-4 py-3 text-left font-semibold">
+                              Fecha del último cambio
+                            </th>
+                            <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {declaredHoursRows.map((row) => (
+                            <tr key={row.id} className="align-top">
+                              <td className="px-4 py-4 font-semibold text-slate-700">
+                                {row.dayLabel}
+                              </td>
+                              <td className="px-4 py-4 text-slate-700">
+                                <div className="flex flex-col">
+                                  <span className="font-semibold">{row.hoursLabel} h</span>
+                                  {row.rangeLabel ? (
+                                    <span className="text-xs text-slate-400">
+                                      {row.rangeLabel}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td className="px-4 py-4 text-slate-600">{row.reasonLabel}</td>
+                              <td className="px-4 py-4 text-slate-500">
+                                {row.lastUpdatedLabel}
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => openDeclareHoursModalForEdit(row.record)}
+                                    disabled={declaredHoursStatus.loading}
+                                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                      declaredHoursStatus.loading
+                                        ? "cursor-not-allowed border-slate-200 text-slate-400"
+                                        : "border-indigo-200 text-indigo-600 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50"
+                                    }`}
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeclaredHoursDelete(row.record)}
+                                    disabled={declaredHoursStatus.loading}
+                                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                      declaredHoursStatus.loading
+                                        ? "cursor-not-allowed border-slate-200 text-slate-400"
+                                        : "border-rose-200 text-rose-600 hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-50"
+                                    }`}
+                                  >
+                                    Eliminar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </section>
@@ -2517,11 +2791,12 @@ export default function CalendarPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h3 className="text-xl font-semibold text-slate-900">
-                Declarar horas
+                {editingDeclaredRecord ? "Editar horas declaradas" : "Declarar horas"}
               </h3>
               <p className="mt-1 text-sm text-slate-500">
-                Selecciona inicio (cada 30 min) y fin en horas enteras desde el
-                inicio dentro de la ventana diaria, con un máximo de {MAX_DECLARABLE_HOURS} h.
+                {editingDeclaredRecord
+                  ? "Actualiza el rango horario y el motivo de tu declaración."
+                  : `Selecciona inicio (cada 30 min) y fin en horas enteras desde el inicio dentro de la ventana diaria, con un máximo de ${MAX_DECLARABLE_HOURS} h.`}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -2774,7 +3049,11 @@ export default function CalendarPage() {
                   disabled={declareStatus.loading}
                   className="rounded-full border border-indigo-200 bg-indigo-500 px-6 py-2 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-indigo-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-300"
                 >
-                  {declareStatus.loading ? "Guardando..." : "Guardar declaración"}
+                  {declareStatus.loading
+                    ? "Guardando..."
+                    : editingDeclaredRecord
+                      ? "Guardar cambios"
+                      : "Guardar declaración"}
                 </button>
               </div>
             </div>
