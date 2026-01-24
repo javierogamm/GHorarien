@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.2.26
+- Compatibilidad añadida con la colección `horasDeclaradas` mediante la variable `NEXT_PUBLIC_APPWRITE_HORASDECLARADAS_COLLECTION_ID`.
+- Nuevo servicio para sumar las horas declaradas por usuario y actualización del tipado de `users` con `horasObtenidas`.
+- Nueva vista "Cálculo de horas" accesible desde "Mis eventos" con 3 KPI: horas obtenidas, declaradas y restantes.
+- Al entrar en "Cálculo de horas" se recalculan las horas (eventos × 3) y se guardan en `horasObtenidas` del usuario.
+
 ## v0.2.25
 - Añadidos botones centrados "Crear evento" y "Crear varios eventos" junto al toggle Laboral/Natural.
 - Nuevo modal "Crear varios eventos" con selección de nombre, tipo, asistentes, establecimiento, hora de inicio y un calendario reducido con multiselección por mes y año.
