@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.2.46
+- Se añade el módulo **Reportes horarios** accesible solo para Admin y Boss desde "Tabla de control", con filtros multiusuario y KPIs globales.
+- Se incorpora un gráfico con sumatorios totales y vista con columnas por usuario para horas obtenidas/declaradas.
+- Se añade una tabla completa de horas declaradas filtrable por usuarios seleccionados.
+- Se consolida la versión de la app en `0.2.46`.
+
 ## v0.2.45
 - Se corrige el acceso a la vista de restaurantes evitando errores cuando falta la URL de Maps.
 - El enlace de Maps ahora se genera a partir del valor de ubicación, con fallback a búsqueda en Google Maps si no es una URL.

@@ -67,6 +67,27 @@ export const fetchHorasDeclaradasForUser = async (
   return allDocuments;
 };
 
+export const fetchAllHorasDeclaradas = async (): Promise<HorasDeclaradasRecord[]> => {
+  ensureHorasDeclaradasConfig();
+  const limit = 100;
+  let offset = 0;
+  let allDocuments: HorasDeclaradasRecord[] = [];
+  let fetched = 0;
+
+  do {
+    const response = await databases.listDocuments<HorasDeclaradasRecord>(
+      appwriteConfig.databaseId,
+      appwriteConfig.horasDeclaradasCollectionId,
+      [Query.limit(limit), Query.offset(offset)]
+    );
+    fetched = response.documents.length;
+    allDocuments = allDocuments.concat(response.documents);
+    offset += fetched;
+  } while (fetched === limit);
+
+  return allDocuments;
+};
+
 export const sumHorasDeclaradasForUser = async (username: string): Promise<number> => {
   const documents = await fetchHorasDeclaradasForUser(username);
   return documents.reduce(
