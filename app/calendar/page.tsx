@@ -44,6 +44,7 @@ import {
 import {
   createHorasDeclaradas,
   deleteHorasDeclaradas,
+  fetchAllHorasDeclaradas,
   fetchHorasDeclaradasForUser,
   type HorasDeclaradasRecord,
   toHorasDeclaradasNumber,
@@ -481,6 +482,9 @@ export default function CalendarPage() {
   const [controlTableEnabled, setControlTableEnabled] = useState(false);
   const [hoursCalculationEnabled, setHoursCalculationEnabled] = useState(false);
   const [restaurantsViewEnabled, setRestaurantsViewEnabled] = useState(false);
+  const [reportHoursEnabled, setReportHoursEnabled] = useState(false);
+  const [reportSelectedUsers, setReportSelectedUsers] = useState<string[]>([]);
+  const [reportSplitByUser, setReportSplitByUser] = useState(false);
   const [viewUserOverride, setViewUserOverride] = useState<string | null>(null);
   const [hoursRefreshToken, setHoursRefreshToken] = useState(0);
   const [hoursSummary, setHoursSummary] = useState({
@@ -497,6 +501,13 @@ export default function CalendarPage() {
     []
   );
   const [declaredHoursStatus, setDeclaredHoursStatus] = useState({
+    loading: false,
+    error: ""
+  });
+  const [reportDeclaredHoursRecords, setReportDeclaredHoursRecords] = useState<
+    HorasDeclaradasRecord[]
+  >([]);
+  const [reportDeclaredHoursStatus, setReportDeclaredHoursStatus] = useState({
     loading: false,
     error: ""
   });
@@ -808,6 +819,7 @@ export default function CalendarPage() {
         setControlTableEnabled(false);
         setHoursCalculationEnabled(false);
         setRestaurantsViewEnabled(false);
+        setReportHoursEnabled(false);
       }
       return next;
     });
@@ -821,6 +833,7 @@ export default function CalendarPage() {
         setMyEventsOnly(false);
         setHoursCalculationEnabled(false);
         setRestaurantsViewEnabled(false);
+        setReportHoursEnabled(false);
       }
       return next;
     });
@@ -834,6 +847,7 @@ export default function CalendarPage() {
         setMyEventsOnly(false);
         setControlTableEnabled(false);
         setHoursCalculationEnabled(false);
+        setReportHoursEnabled(false);
       }
       return next;
     });
@@ -1089,6 +1103,7 @@ export default function CalendarPage() {
     setControlTableEnabled(false);
     setHoursCalculationEnabled(true);
     setRestaurantsViewEnabled(false);
+    setReportHoursEnabled(false);
     triggerHoursRecalculation();
   };
 
@@ -1096,12 +1111,14 @@ export default function CalendarPage() {
     setHoursCalculationEnabled(false);
     setMyEventsOnly(true);
     setRestaurantsViewEnabled(false);
+    setReportHoursEnabled(false);
   };
 
   const handleMyEventsBackToCalendar = () => {
     setMyEventsOnly(false);
     setViewUserOverride(null);
     setRestaurantsViewEnabled(false);
+    setReportHoursEnabled(false);
   };
 
   const handleHoursCalculationBackToCalendar = () => {
@@ -1109,6 +1126,29 @@ export default function CalendarPage() {
     setMyEventsOnly(false);
     setViewUserOverride(null);
     setRestaurantsViewEnabled(false);
+    setReportHoursEnabled(false);
+  };
+
+  const handleReportHoursOpen = () => {
+    setReportHoursEnabled(true);
+    setControlTableEnabled(false);
+    setMyEventsOnly(false);
+    setHoursCalculationEnabled(false);
+    setRestaurantsViewEnabled(false);
+    setViewUserOverride(null);
+  };
+
+  const handleReportHoursBackToCalendar = () => {
+    setReportHoursEnabled(false);
+    setMyEventsOnly(false);
+    setViewUserOverride(null);
+    setRestaurantsViewEnabled(false);
+  };
+
+  const handleReportUserToggle = (user: string) => {
+    setReportSelectedUsers((prev) =>
+      prev.includes(user) ? prev.filter((item) => item !== user) : [...prev, user]
+    );
   };
 
   const handleLogout = () => {
@@ -1511,9 +1551,138 @@ export default function CalendarPage() {
     return map;
   }, [sortedUsers]);
   const getUserColor = (value: string) => userColorMap.get(value) ?? DEFAULT_USER_COLOR;
+  const reportEventCounts = useMemo(() => {
+    const grouped = new Map<string, Set<string>>();
+    allEvents.forEach((eventItem) => {
+      if (!eventItem.fecha) return;
+      const eventDate = parseDateWithoutTime(eventItem.fecha);
+      if (!eventDate) return;
+      const key = buildEventGroupKey(eventItem);
+      const attendees = grouped.get(key);
+      const userLabel = eventItem.user?.trim();
+      if (!userLabel) return;
+      if (attendees) {
+        attendees.add(userLabel);
+        return;
+      }
+      grouped.set(key, new Set([userLabel]));
+    });
+
+    const counts = new Map<string, number>();
+    grouped.forEach((attendees) => {
+      attendees.forEach((user) => {
+        if (!validUsernames.has(user)) return;
+        counts.set(user, (counts.get(user) ?? 0) + 1);
+      });
+    });
+    return counts;
+  }, [allEvents, validUsernames]);
+  const reportActiveUsers = useMemo(() => {
+    const selected = reportSelectedUsers.filter((user) => validUsernames.has(user));
+    if (selected.length > 0) return selected;
+    return sortedUsers.map((user) => user.user);
+  }, [reportSelectedUsers, sortedUsers, validUsernames]);
+  const reportActiveUserSet = useMemo(
+    () => new Set(reportActiveUsers),
+    [reportActiveUsers]
+  );
+  const reportDeclaredHoursByUser = useMemo(() => {
+    const map = new Map<string, number>();
+    reportDeclaredHoursRecords.forEach((record) => {
+      const userLabel = record.user?.trim();
+      if (!userLabel || !validUsernames.has(userLabel)) return;
+      const hoursValue = toHorasDeclaradasNumber(record.horasDeclaradas);
+      map.set(userLabel, (map.get(userLabel) ?? 0) + hoursValue);
+    });
+    return map;
+  }, [reportDeclaredHoursRecords, validUsernames]);
+  const reportUserSummaries = useMemo(
+    () =>
+      reportActiveUsers.map((user) => {
+        const eventCount = reportEventCounts.get(user) ?? 0;
+        const obtained = eventCount * HOURS_PER_EVENT;
+        const declared = reportDeclaredHoursByUser.get(user) ?? 0;
+        const remaining = obtained - declared;
+        return {
+          user,
+          obtained,
+          declared,
+          remaining
+        };
+      }),
+    [reportActiveUsers, reportDeclaredHoursByUser, reportEventCounts]
+  );
+  const reportSummaryTotals = useMemo(
+    () =>
+      reportUserSummaries.reduce(
+        (totals, userItem) => ({
+          obtained: totals.obtained + userItem.obtained,
+          declared: totals.declared + userItem.declared,
+          remaining: totals.remaining + userItem.remaining
+        }),
+        { obtained: 0, declared: 0, remaining: 0 }
+      ),
+    [reportUserSummaries]
+  );
+  const reportChartMax = useMemo(() => {
+    const values = reportSplitByUser
+      ? reportUserSummaries.flatMap((item) => [item.obtained, item.declared])
+      : [reportSummaryTotals.obtained, reportSummaryTotals.declared];
+    const maxValue = Math.max(0, ...values);
+    return Math.max(maxValue + 10, 10);
+  }, [reportSplitByUser, reportSummaryTotals, reportUserSummaries]);
+  const reportTotalChartBars = useMemo(
+    () => [
+      {
+        key: "obtained-total",
+        label: "Horas obtenidas",
+        value: reportSummaryTotals.obtained,
+        tone: "bg-emerald-500",
+        surface: "bg-emerald-50 text-emerald-700"
+      },
+      {
+        key: "declared-total",
+        label: "Horas declaradas",
+        value: reportSummaryTotals.declared,
+        tone: "bg-sky-500",
+        surface: "bg-sky-50 text-sky-700"
+      }
+    ],
+    [reportSummaryTotals]
+  );
+  const reportDeclaredHoursRows = useMemo(() => {
+    const sortedRecords = [...reportDeclaredHoursRecords].sort((a, b) => {
+      const userCompare = (a.user ?? "").localeCompare(b.user ?? "");
+      if (userCompare !== 0) return userCompare;
+      return (
+        new Date(b.fechaHorasDeclaradas ?? 0).getTime() -
+        new Date(a.fechaHorasDeclaradas ?? 0).getTime()
+      );
+    });
+
+    return sortedRecords
+      .filter((record) => {
+        const userLabel = record.user?.trim() ?? "";
+        if (!userLabel) return false;
+        return reportActiveUserSet.has(userLabel);
+      })
+      .map((record) => {
+        const hoursValue = toHorasDeclaradasNumber(record.horasDeclaradas);
+        return {
+          id: record.$id,
+          userLabel: record.user?.trim() || "Sin usuario",
+          hoursLabel: formatHoursValue(hoursValue),
+          rangeLabel: record.horasDeclaradasRango ?? "",
+          dayLabel: formatDeclaredDay(record.fechaHorasDeclaradas),
+          reasonLabel: record.motivo?.trim() || "—",
+          lastUpdatedLabel: formatDisplayDate(record.$updatedAt)
+        };
+      });
+  }, [reportActiveUserSet, reportDeclaredHoursRecords]);
   const canCreateEvents = userRole !== "User";
   const canEditDetails = userRole !== "User";
   const showControlTable = userRole === "Admin" || userRole === "Boss";
+  const showReportHours = showControlTable;
   const canManageUsers = showControlTable;
   const targetUser = viewUserOverride ?? username ?? "";
   const targetUserHasRecord = targetUser ? validUsernames.has(targetUser) : false;
@@ -1542,6 +1711,7 @@ export default function CalendarPage() {
       setControlTableEnabled(false);
       setHoursCalculationEnabled(false);
       setRestaurantsViewEnabled(false);
+      setReportHoursEnabled(false);
       setMyEventsOnly(true);
     },
     [canAccessUserData, resolveViewOverride]
@@ -1555,6 +1725,7 @@ export default function CalendarPage() {
       setControlTableEnabled(false);
       setMyEventsOnly(false);
       setRestaurantsViewEnabled(false);
+      setReportHoursEnabled(false);
       setHoursCalculationEnabled(true);
       triggerHoursRecalculation();
     },
@@ -2731,6 +2902,39 @@ export default function CalendarPage() {
     usersLoading
   ]);
 
+  useEffect(() => {
+    if (!reportHoursEnabled) return;
+    let cancelled = false;
+
+    const loadReportDeclarations = async () => {
+      setReportDeclaredHoursStatus({
+        loading: true,
+        error: ""
+      });
+      try {
+        const records = await fetchAllHorasDeclaradas();
+        if (cancelled) return;
+        setReportDeclaredHoursRecords(records);
+        setReportDeclaredHoursStatus({
+          loading: false,
+          error: ""
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setReportDeclaredHoursStatus({
+          loading: false,
+          error: getErrorMessage(error, "No se pudieron cargar las horas declaradas.")
+        });
+      }
+    };
+
+    loadReportDeclarations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getErrorMessage, reportHoursEnabled]);
+
   const controlTableByUser = useMemo(() => {
     const userMap = new Map<
       string,
@@ -3123,6 +3327,378 @@ export default function CalendarPage() {
                 ) : null}
               </div>
             </div>
+          </section>
+        ) : reportHoursEnabled ? (
+          <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-soft backdrop-blur">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="flex items-center gap-3 text-2xl font-semibold text-slate-900">
+                  <HourglassModuleIcon title="" className="h-8 w-8" />
+                  <span>Reportes horarios</span>
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Vista global con las horas obtenidas y declaradas de todos los usuarios.
+                </p>
+                {reportSelectedUsers.length === 0 ? (
+                  <p className="mt-1 text-xs text-slate-400">
+                    Sin filtros activos: mostrando todos los usuarios.
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleReportHoursBackToCalendar}
+                  className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-indigo-200 hover:text-indigo-600"
+                >
+                  <CalendarModuleIcon title="" className="h-4 w-4" />
+                  Volver al calendario
+                </button>
+                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Usuarios
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {sortedUsers.map((userItem) => {
+                      const isSelected = reportSelectedUsers.includes(userItem.user);
+                      const color = getUserColor(userItem.user);
+                      return (
+                        <button
+                          key={`report-user-${userItem.user}`}
+                          type="button"
+                          onClick={() => handleReportUserToggle(userItem.user)}
+                          className={`flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                            isSelected
+                              ? "border-indigo-200 bg-indigo-50 text-indigo-600"
+                              : "border-slate-200 text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
+                          }`}
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full ${color.dotClass}`}
+                            aria-hidden="true"
+                          />
+                          {userItem.user}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {reportDeclaredHoursStatus.error ? (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                {reportDeclaredHoursStatus.error}
+              </div>
+            ) : null}
+
+            {reportActiveUsers.length === 0 ? (
+              <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-10 text-center text-sm text-slate-500">
+                No hay usuarios disponibles para mostrar.
+              </div>
+            ) : (
+              <>
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                  <article className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                      Horas obtenidas
+                    </p>
+                    <p className="text-3xl font-semibold text-emerald-700">
+                      {formatHoursValue(reportSummaryTotals.obtained)}
+                    </p>
+                    <p className="text-xs text-emerald-600/80">
+                      {reportActiveUsers.length} usuarios activos en el filtro
+                    </p>
+                  </article>
+                  <article className="flex flex-col gap-2 rounded-2xl border border-sky-100 bg-sky-50/70 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-600">
+                      Horas declaradas
+                    </p>
+                    <p className="text-3xl font-semibold text-sky-700">
+                      {formatHoursValue(reportSummaryTotals.declared)}
+                    </p>
+                    <p className="text-xs text-sky-600/80">
+                      Sumatorio de declaraciones registradas
+                    </p>
+                  </article>
+                  <article className="flex flex-col gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+                      Horas restantes
+                    </p>
+                    <p
+                      className={`text-3xl font-semibold ${
+                        reportSummaryTotals.remaining < 0
+                          ? "text-rose-600"
+                          : "text-indigo-700"
+                      }`}
+                    >
+                      {formatHoursValue(reportSummaryTotals.remaining)}
+                    </p>
+                    <p className="text-xs text-indigo-600/80">
+                      Horas obtenidas − horas declaradas
+                    </p>
+                  </article>
+                </div>
+
+                <div className="mt-8 rounded-[32px] border border-slate-200/80 bg-white/80 p-6 shadow-inner">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">
+                        Comparativa de horas
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Visualiza los sumatorios globales o el detalle por usuario.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReportSplitByUser((prev) => !prev)}
+                      className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-indigo-200 hover:text-indigo-600"
+                    >
+                      {reportSplitByUser ? "Ver totales" : "Ver por usuario"}
+                    </button>
+                  </div>
+
+                  <div className="mt-8">
+                    <div className="relative h-[360px] rounded-[28px] border border-slate-100 bg-gradient-to-b from-white via-white to-slate-50/80 px-6 pb-8 pt-6">
+                      <div className="pointer-events-none absolute inset-0 flex flex-col justify-between px-6 pb-8 pt-6">
+                        {hoursChartScaleSteps.map((step) => {
+                          const scaleValue = reportChartMax * step;
+                          return (
+                            <div
+                              key={`report-scale-${step}`}
+                              className="flex items-center gap-3"
+                            >
+                              <div className="h-px flex-1 border-t border-dashed border-slate-200/80" />
+                              <span className="w-16 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                {formatHoursValue(scaleValue)}h
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {reportSplitByUser ? (
+                        <div className="relative flex h-full items-end gap-10 overflow-x-auto pb-2">
+                          {reportUserSummaries.map((summary) => {
+                            const userColor = getUserColor(summary.user);
+                            const bars = [
+                              {
+                                key: `${summary.user}-obtained`,
+                                label: "Obt.",
+                                value: summary.obtained,
+                                tone: "bg-emerald-500",
+                                surface: "bg-emerald-50 text-emerald-700"
+                              },
+                              {
+                                key: `${summary.user}-declared`,
+                                label: "Decl.",
+                                value: summary.declared,
+                                tone: "bg-sky-500",
+                                surface: "bg-sky-50 text-sky-700"
+                              }
+                            ];
+
+                            return (
+                              <div
+                                key={`report-user-${summary.user}`}
+                                className="flex min-w-[180px] flex-col items-center gap-4"
+                              >
+                                <div className="flex h-[260px] items-end gap-4">
+                                  {bars.map((bar) => {
+                                    const ratio =
+                                      reportChartMax === 0
+                                        ? 0
+                                        : Math.min(1, bar.value / reportChartMax);
+                                    const barHeight =
+                                      bar.value <= 0 ? 0 : Math.max(12, ratio * 100);
+
+                                    return (
+                                      <div
+                                        key={bar.key}
+                                        className="flex w-12 flex-col items-center gap-2"
+                                      >
+                                        <div className="relative flex h-[220px] w-12 items-end">
+                                          <div className="absolute inset-0 rounded-[24px] border border-slate-200/80 bg-slate-100/80 shadow-inner" />
+                                          {bar.value > 0 ? (
+                                            <div
+                                              className={`relative w-full rounded-[20px] ${bar.tone} shadow-[0_18px_28px_-20px_rgba(15,23,42,0.6)] transition-all duration-500`}
+                                              style={{ height: `${barHeight}%` }}
+                                            >
+                                              <div
+                                                className="absolute left-1/2 -translate-x-1/2"
+                                                style={{ bottom: "calc(100% + 0.5rem)" }}
+                                              >
+                                                <span
+                                                  className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold shadow-sm ${bar.surface}`}
+                                                >
+                                                  {formatHoursValue(bar.value)} h
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="relative h-2.5 w-full rounded-full bg-slate-300/80" />
+                                          )}
+                                        </div>
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                          {bar.label}
+                                        </p>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                <div className="flex flex-col items-center gap-1 text-center">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`h-2.5 w-2.5 rounded-full ${userColor.dotClass}`}
+                                      aria-hidden="true"
+                                    />
+                                    <p className="text-xs font-semibold text-slate-700">
+                                      {summary.user}
+                                    </p>
+                                  </div>
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                    {formatHoursValue(summary.obtained)} h ·{" "}
+                                    {formatHoursValue(summary.declared)} h
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="relative flex h-full items-end justify-center gap-12 pb-2">
+                          {reportTotalChartBars.map((bar) => {
+                            const ratio =
+                              reportChartMax === 0
+                                ? 0
+                                : Math.min(1, bar.value / reportChartMax);
+                            const barHeight = bar.value <= 0 ? 0 : Math.max(12, ratio * 100);
+
+                            return (
+                              <div
+                                key={bar.key}
+                                className="flex w-40 flex-col items-center gap-4"
+                              >
+                                <div className="relative flex h-[260px] w-28 items-end">
+                                  <div className="absolute inset-0 rounded-[32px] border border-slate-200/80 bg-slate-100/80 shadow-inner" />
+                                  {bar.value > 0 ? (
+                                    <div
+                                      className={`relative w-full rounded-[28px] ${bar.tone} shadow-[0_22px_35px_-22px_rgba(15,23,42,0.65)] transition-all duration-500`}
+                                      style={{ height: `${barHeight}%` }}
+                                    >
+                                      <div
+                                        className="absolute left-1/2 -translate-x-1/2"
+                                        style={{ bottom: "calc(100% + 0.75rem)" }}
+                                      >
+                                        <span
+                                          className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${bar.surface}`}
+                                        >
+                                          {formatHoursValue(bar.value)} h
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="relative h-3 w-full rounded-full bg-slate-300/80" />
+                                  )}
+                                </div>
+                                <div className="flex flex-col items-center gap-1 text-center">
+                                  <p className="text-sm font-semibold text-slate-700">
+                                    {bar.label}
+                                  </p>
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                    {formatHoursValue(bar.value)} h
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-10">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-base font-semibold text-slate-900">
+                          Horas declaradas
+                        </h4>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Detalle completo de horas declaradas por usuario.
+                        </p>
+                      </div>
+                      {reportDeclaredHoursStatus.loading ? (
+                        <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Actualizando...
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {reportDeclaredHoursRows.length === 0 &&
+                    !reportDeclaredHoursStatus.loading ? (
+                      <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-8 text-center text-sm text-slate-500">
+                        No hay horas declaradas para los usuarios seleccionados.
+                      </div>
+                    ) : reportDeclaredHoursRows.length > 0 ? (
+                      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-semibold">
+                                  Usuario
+                                </th>
+                                <th className="px-4 py-3 text-left font-semibold">Día</th>
+                                <th className="px-4 py-3 text-left font-semibold">
+                                  Nº de horas
+                                </th>
+                                <th className="px-4 py-3 text-left font-semibold">
+                                  Motivo
+                                </th>
+                                <th className="px-4 py-3 text-left font-semibold">
+                                  Fecha del último cambio
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {reportDeclaredHoursRows.map((row) => (
+                                <tr key={row.id} className="align-top">
+                                  <td className="px-4 py-4 font-semibold text-slate-700">
+                                    {row.userLabel}
+                                  </td>
+                                  <td className="px-4 py-4 font-semibold text-slate-700">
+                                    {row.dayLabel}
+                                  </td>
+                                  <td className="px-4 py-4 text-slate-700">
+                                    <div className="flex flex-col">
+                                      <span className="font-semibold">
+                                        {row.hoursLabel} h
+                                      </span>
+                                      {row.rangeLabel ? (
+                                        <span className="text-xs text-slate-400">
+                                          {row.rangeLabel}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-4 text-slate-600">
+                                    {row.reasonLabel}
+                                  </td>
+                                  <td className="px-4 py-4 text-slate-500">
+                                    {row.lastUpdatedLabel}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </>
+            )}
           </section>
         ) : restaurantsViewEnabled ? (
           <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-soft backdrop-blur">
@@ -3723,6 +4299,16 @@ export default function CalendarPage() {
                   <TableModuleIcon title="" className="h-4 w-4" />
                   Exportar Excel
                 </button>
+                {showReportHours ? (
+                  <button
+                    type="button"
+                    onClick={handleReportHoursOpen}
+                    className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-amber-200 hover:text-amber-600"
+                  >
+                    <HourglassModuleIcon title="" className="h-4 w-4" />
+                    Reportes horarios
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleRestaurantsToggle}
@@ -3991,7 +4577,8 @@ export default function CalendarPage() {
         !myEventsOnly &&
         !controlTableEnabled &&
         !hoursCalculationEnabled &&
-        !restaurantsViewEnabled ? (
+        !restaurantsViewEnabled &&
+        !reportHoursEnabled ? (
           <div className="flex items-center justify-end text-xs text-slate-400">
             Usa el botón &quot;Tabla de control&quot; para ver el resumen agrupado.
           </div>
