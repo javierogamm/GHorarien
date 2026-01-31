@@ -50,7 +50,13 @@ import {
   toHorasDeclaradasNumber,
   updateHorasDeclaradas
 } from "../../services/horasDeclaradasService";
-import { deleteHorasObtenidasForAttendees } from "../../services/horasObtenidasService";
+import {
+  createHorasObtenidasForSoloComida,
+  deleteHorasObtenidasForAttendees,
+  deleteHorasObtenidasForSoloComida,
+  fetchHorasObtenidasForUser,
+  type HorasObtenidasRecord
+} from "../../services/horasObtenidasService";
 import {
   fetchUsers,
   parseHorasObtenidas,
@@ -78,6 +84,7 @@ const MONTH_NAMES = [
   "Diciembre"
 ];
 const HOURS_PER_EVENT = 3;
+const SOLO_COMIDA_HOURS = 2;
 const MAX_DECLARABLE_HOURS = 7;
 const MAX_REASON_LENGTH = 200;
 const DECLARE_RANGE_START_MINUTES = 7 * 60 + 30;
@@ -107,6 +114,8 @@ const isHoursGeneratingEvent = (eventType?: EventCategory | null) =>
   eventType !== "Comida";
 const canDeleteEventsByRole = (role?: string | null) =>
   role === "Admin" || role === "Boss" || role === "Eventmaster";
+const buildSoloComidaKey = (causa: string, fechaObtencion: string) =>
+  `${causa.trim()}|${fechaObtencion}`;
 
 type AutoEventNameParams = {
   eventType: EventCategory;
@@ -586,6 +595,10 @@ export default function CalendarPage() {
     event: CalendarEvent;
     attendees: string[];
   };
+  type SoloComidaModalState = {
+    isOpen: boolean;
+    group: MyEventGroup | null;
+  };
 
   const [editForm, setEditForm] = useState<EditFormState>({
     nombre: "",
@@ -611,6 +624,21 @@ export default function CalendarPage() {
     loading: false,
     error: "",
     success: ""
+  });
+  const [soloComidaRecords, setSoloComidaRecords] = useState<
+    HorasObtenidasRecord[]
+  >([]);
+  const [soloComidaStatus, setSoloComidaStatus] = useState({
+    loading: false,
+    error: ""
+  });
+  const [soloComidaActionStatus, setSoloComidaActionStatus] = useState({
+    loading: false,
+    error: ""
+  });
+  const [soloComidaModal, setSoloComidaModal] = useState<SoloComidaModalState>({
+    isOpen: false,
+    group: null
   });
 
   useEffect(() => {
@@ -1166,6 +1194,56 @@ export default function CalendarPage() {
       error instanceof Error && error.message ? error.message : fallback,
     []
   );
+
+  const handleSoloComidaOpen = (group: MyEventGroup) => {
+    setSoloComidaActionStatus({ loading: false, error: "" });
+    setSoloComidaModal({ isOpen: true, group });
+  };
+
+  const handleSoloComidaClose = () => {
+    if (soloComidaActionStatus.loading) return;
+    setSoloComidaModal({ isOpen: false, group: null });
+    setSoloComidaActionStatus({ loading: false, error: "" });
+  };
+
+  const handleSoloComidaConfirm = async () => {
+    if (!soloComidaModal.group || !targetUser) return;
+    const causa = soloComidaModal.group.event.nombre?.trim() || "Evento";
+    const fechaObtencion = soloComidaModal.group.event.fecha;
+    const key = buildSoloComidaKey(causa, fechaObtencion);
+    const isActive = soloComidaKeys.has(key);
+
+    setSoloComidaActionStatus({ loading: true, error: "" });
+    try {
+      if (isActive) {
+        await deleteHorasObtenidasForSoloComida({
+          user: targetUser,
+          causa,
+          fechaObtencion
+        });
+        setSoloComidaRecords((prev) =>
+          prev.filter(
+            (record) =>
+              buildSoloComidaKey(record.causa, record.fechaObtencion) !== key
+          )
+        );
+      } else {
+        const record = await createHorasObtenidasForSoloComida({
+          user: targetUser,
+          causa,
+          fechaObtencion
+        });
+        setSoloComidaRecords((prev) => [...prev, record]);
+      }
+      setSoloComidaActionStatus({ loading: false, error: "" });
+      setSoloComidaModal({ isOpen: false, group: null });
+    } catch (error) {
+      setSoloComidaActionStatus({
+        loading: false,
+        error: getErrorMessage(error, "No se pudo actualizar el solo comida.")
+      });
+    }
+  };
 
   const formatDisplayDate = (value?: string) => {
     if (!value) return "—";
@@ -2806,13 +2884,61 @@ export default function CalendarPage() {
       });
   }, [allEvents, targetUser]);
 
+  useEffect(() => {
+    if (!targetUser || (!myEventsOnly && !hoursCalculationEnabled)) {
+      setSoloComidaRecords([]);
+      setSoloComidaStatus({ loading: false, error: "" });
+      return;
+    }
+
+    let cancelled = false;
+    const loadSoloComida = async () => {
+      setSoloComidaStatus({ loading: true, error: "" });
+      try {
+        const records = await fetchHorasObtenidasForUser({
+          user: targetUser,
+          numeroHoras: SOLO_COMIDA_HOURS
+        });
+        if (cancelled) return;
+        setSoloComidaRecords(records);
+        setSoloComidaStatus({ loading: false, error: "" });
+      } catch (error) {
+        if (cancelled) return;
+        setSoloComidaStatus({
+          loading: false,
+          error: getErrorMessage(
+            error,
+            "No se pudieron cargar los registros de solo comida."
+          )
+        });
+      }
+    };
+
+    loadSoloComida();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getErrorMessage, hoursCalculationEnabled, myEventsOnly, targetUser]);
+
   const myHoursEligibleEvents = useMemo(
     () => myEvents.filter((group) => isHoursGeneratingEvent(group.event.eventType)),
     [myEvents]
   );
+  const soloComidaKeys = useMemo(() => {
+    const keys = new Set<string>();
+    soloComidaRecords.forEach((record) => {
+      keys.add(buildSoloComidaKey(record.causa, record.fechaObtencion));
+    });
+    return keys;
+  }, [soloComidaRecords]);
+  const soloComidaHours = useMemo(
+    () => soloComidaRecords.length * SOLO_COMIDA_HOURS,
+    [soloComidaRecords]
+  );
   const obtainedHours = useMemo(
-    () => myHoursEligibleEvents.length * HOURS_PER_EVENT,
-    [myHoursEligibleEvents]
+    () => myHoursEligibleEvents.length * HOURS_PER_EVENT + soloComidaHours,
+    [myHoursEligibleEvents, soloComidaHours]
   );
 
   const myEventsByYear = useMemo(() => {
@@ -2846,6 +2972,15 @@ export default function CalendarPage() {
           }))
       }));
   }, [myEvents]);
+  const soloComidaModalEventName =
+    soloComidaModal.group?.event.nombre?.trim() || "Evento";
+  const soloComidaModalDate = soloComidaModal.group?.event.fecha ?? "";
+  const soloComidaModalActive = Boolean(
+    soloComidaModal.group &&
+      soloComidaKeys.has(
+        buildSoloComidaKey(soloComidaModalEventName, soloComidaModalDate)
+      )
+  );
 
   useEffect(() => {
     if (!hoursCalculationEnabled || !targetUser) return;
@@ -3089,7 +3224,8 @@ export default function CalendarPage() {
                 <p className="mt-1 text-sm text-slate-500">
                   Recuento automático: cada evento asistido suma {HOURS_PER_EVENT}{" "}
                   horas y se guarda en el perfil del usuario seleccionado. Los eventos
-                  de tipo Comida no generan horas extra.
+                  de tipo Comida no generan horas extra salvo si activas "Solo
+                  comida".
                 </p>
                 {targetUser ? (
                   <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-amber-500">
@@ -3395,7 +3531,8 @@ export default function CalendarPage() {
                   Vista global con las horas obtenidas y declaradas de todos los usuarios.
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Los eventos de tipo Comida no generan horas extra.
+                  Los eventos de tipo Comida no generan horas extra salvo si se
+                  activa "Solo comida".
                 </p>
                 {reportSelectedUsers.length === 0 ? (
                   <p className="mt-1 text-xs text-slate-400">
@@ -4189,6 +4326,12 @@ export default function CalendarPage() {
               </div>
             </div>
 
+            {soloComidaStatus.error ? (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                {soloComidaStatus.error}
+              </div>
+            ) : null}
+
             {myEvents.length === 0 ? (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-10 text-center text-sm text-slate-500">
                 {targetUser
@@ -4245,6 +4388,15 @@ export default function CalendarPage() {
                                 dotClass: "bg-slate-300",
                                 cardClass: "bg-slate-100 text-slate-600 border-slate-200"
                               };
+                              const soloComidaCausa =
+                                group.event.nombre?.trim() || "Evento";
+                              const soloComidaKey = buildSoloComidaKey(
+                                soloComidaCausa,
+                                group.event.fecha
+                              );
+                              const isSoloComidaActive =
+                                group.event.eventType === "Comida" &&
+                                soloComidaKeys.has(soloComidaKey);
                               return (
                                 <details
                                   key={group.event.$id}
@@ -4317,6 +4469,31 @@ export default function CalendarPage() {
                                           : "Sin asistentes"}
                                       </span>
                                     </div>
+                                    {group.event.eventType === "Comida" ? (
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSoloComidaOpen(group)}
+                                          disabled={soloComidaStatus.loading}
+                                          className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                                            soloComidaStatus.loading
+                                              ? "cursor-not-allowed border-slate-200 bg-white/60 text-slate-400"
+                                              : isSoloComidaActive
+                                                ? "border-rose-200 bg-rose-50 text-rose-600 hover:-translate-y-0.5 hover:border-rose-300"
+                                                : "border-emerald-200 bg-emerald-50 text-emerald-600 hover:-translate-y-0.5 hover:border-emerald-300"
+                                          }`}
+                                        >
+                                          {isSoloComidaActive
+                                            ? "Eliminar solo comida"
+                                            : "Solo comida"}
+                                        </button>
+                                        <span className="text-[11px] text-slate-500">
+                                          {isSoloComidaActive
+                                            ? "2 horas registradas."
+                                            : "Suma 2 horas si lo activas."}
+                                        </span>
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </details>
                               );
@@ -4641,6 +4818,94 @@ export default function CalendarPage() {
             Usa el botón &quot;Tabla de control&quot; para ver el resumen agrupado.
           </div>
         ) : null}
+      </div>
+
+      <div
+        className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-10 backdrop-blur-sm transition ${
+          soloComidaModal.isOpen
+            ? "opacity-100"
+            : "pointer-events-none opacity-0"
+        }`}
+        onClick={handleSoloComidaClose}
+      >
+        <div
+          className={`w-full max-w-xl rounded-[32px] border border-white/70 bg-white/95 p-6 shadow-soft transition ${
+            soloComidaModal.isOpen
+              ? "translate-y-0 scale-100"
+              : "translate-y-4 scale-95"
+          }`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-semibold text-slate-900">
+                {soloComidaModalActive ? "Eliminar solo comida" : "Solo comida"}
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {soloComidaModalActive
+                  ? "Eliminarás el registro de 2 horas asociado a este evento."
+                  : "Se generará un registro de 2 horas para este evento de comida."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSoloComidaClose}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+            >
+              Cerrar
+            </button>
+          </div>
+
+          {soloComidaModal.group ? (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+              <div className="flex flex-wrap gap-2">
+                <span className="font-semibold text-slate-500">Evento:</span>
+                <span>{soloComidaModalEventName}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <span className="font-semibold text-slate-500">Fecha:</span>
+                <span>{formatDisplayDate(soloComidaModalDate)}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {soloComidaActionStatus.error ? (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+              {soloComidaActionStatus.error}
+            </div>
+          ) : null}
+
+          <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleSoloComidaClose}
+              disabled={soloComidaActionStatus.loading}
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSoloComidaConfirm}
+              disabled={soloComidaActionStatus.loading}
+              className={`rounded-full px-4 py-2 text-xs font-semibold text-white shadow-sm transition ${
+                soloComidaModalActive
+                  ? "bg-rose-500 hover:bg-rose-600"
+                  : "bg-emerald-500 hover:bg-emerald-600"
+              } ${
+                soloComidaActionStatus.loading
+                  ? "cursor-not-allowed opacity-70"
+                  : "hover:-translate-y-0.5"
+              }`}
+            >
+              {soloComidaActionStatus.loading
+                ? "Procesando..."
+                : soloComidaModalActive
+                  ? "Eliminar"
+                  : "Confirmar"}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div
