@@ -12,6 +12,7 @@ NEXT_PUBLIC_APPWRITE_PROJECT_ID=
 NEXT_PUBLIC_APPWRITE_DATABASE_ID=
 NEXT_PUBLIC_APPWRITE_USERS_COLLECTION_ID=
 NEXT_PUBLIC_APPWRITE_EVENTS_COLLECTION_ID=
+NEXT_PUBLIC_APPWRITE_HORASOBTENIDAS_COLLECTION_ID=
 ```
 
 ## Appwrite: creación de colecciones
@@ -29,7 +30,12 @@ NEXT_PUBLIC_APPWRITE_EVENTS_COLLECTION_ID=
    - `horaFin` (datetime, ISO)
    - `duration` (number)
    - `notas` (string)
-4. Configura permisos de lectura/escritura según tus necesidades (no se usa Appwrite Auth).
+4. Crea la colección `horasObtenidas` con los campos EXACTOS:
+   - `user` (string)
+   - `numeroHoras` (integer)
+   - `causa` (string)
+   - `fechaObtencion` (datetime, ISO)
+5. Configura permisos de lectura/escritura según tus necesidades (no se usa Appwrite Auth).
 
 ### Script de ejemplo (Appwrite CLI)
 

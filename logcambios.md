@@ -1,5 +1,10 @@
 # Log de cambios
 
+## v0.2.48
+- Se añade la colección `horasObtenidas` con configuración por variable `NEXT_PUBLIC_APPWRITE_HORASOBTENIDAS_COLLECTION_ID`.
+- Al crear o editar eventos se generan automáticamente registros de horas obtenidas por asistente (solo para Cena, Taller y Visita cultural) con causa y fecha del evento.
+- Se consolida la versión de la app en `0.2.48`.
+
 ## v0.2.47
 - En el Gestor de horas (personal y rol Boss) los eventos de tipo **Comida** dejan de generar horas extra.
 - Se añade aviso en la interfaz para recordar la excepción de eventos Comida al calcular horas.

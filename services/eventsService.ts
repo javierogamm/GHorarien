@@ -1,6 +1,7 @@
 import { ID, Models, Query } from "appwrite";
 import type { EventCategory } from "../constants/eventCategories";
 import { appwriteConfig, databases, ensureAppwriteConfig } from "./appwriteClient";
+import { createHorasObtenidasForAttendees } from "./horasObtenidasService";
 
 export type CalendarEvent = Models.Document & {
   eventType: EventCategory;
@@ -103,7 +104,15 @@ export const createEventsForAttendees = async ({
     )
   );
 
-  return Promise.all(payloads);
+  const createdEvents = await Promise.all(payloads);
+  await createHorasObtenidasForAttendees({
+    attendees,
+    eventType,
+    causa: nombre,
+    fechaObtencion: fecha
+  });
+
+  return createdEvents;
 };
 
 export const updateEvent = async (
