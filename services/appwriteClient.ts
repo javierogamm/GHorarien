@@ -19,6 +19,8 @@ export const appwriteConfig = {
   eventsCollectionId: process.env.NEXT_PUBLIC_APPWRITE_EVENTS_COLLECTION_ID ?? "",
   horasDeclaradasCollectionId:
     process.env.NEXT_PUBLIC_APPWRITE_HORASDECLARADAS_COLLECTION_ID ?? "",
+  horasObtenidasCollectionId:
+    process.env.NEXT_PUBLIC_APPWRITE_HORASOBTENIDAS_COLLECTION_ID ?? "",
   establishmentCollectionId:
     process.env.NEXT_PUBLIC_APPWRITE_ESTABLISHMENT_ID ?? ""
 };
