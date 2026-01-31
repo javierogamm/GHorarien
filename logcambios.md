@@ -1,11 +1,5 @@
 # Log de cambios
 
-## v0.2.48
-- Se habilita la edición de eventos Comida para el rol User desde "Mis eventos", manteniendo restringida la edición de asistentes y tipo de evento.
-- En el modal de edición se añade un slider para activar horas obtenidas en eventos Comida (2h por evento).
-- El cálculo de horas y los reportes ahora consideran la activación de horas en eventos Comida.
-- Se consolida la versión de la app en `0.2.48`.
-
 ## v0.2.47
 - En el Gestor de horas (personal y rol Boss) los eventos de tipo **Comida** dejan de generar horas extra.
 - Se añade aviso en la interfaz para recordar la excepción de eventos Comida al calcular horas.
