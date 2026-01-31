@@ -10,6 +10,7 @@ export type HorasObtenidasRecord = Models.Document & {
 };
 
 const HOURS_PER_EVENT = 3;
+const HOURS_PER_SOLO_COMIDA = 2;
 const isHoursGeneratingEvent = (eventType: EventCategory) => eventType !== "Comida";
 
 type CreateHorasObtenidasInput = {
@@ -24,6 +25,25 @@ type DeleteHorasObtenidasInput = {
   eventType: EventCategory;
   causa: string;
   fechaObtencion: string;
+};
+
+type CreateHorasObtenidasSoloComidaInput = {
+  user: string;
+  causa: string;
+  fechaObtencion: string;
+};
+
+type DeleteHorasObtenidasSoloComidaInput = {
+  user: string;
+  causa: string;
+  fechaObtencion: string;
+};
+
+type FetchHorasObtenidasForUserInput = {
+  user: string;
+  causa?: string;
+  fechaObtencion?: string;
+  numeroHoras?: number;
 };
 
 const ensureHorasObtenidasConfig = () => {
@@ -102,4 +122,97 @@ export const deleteHorasObtenidasForAttendees = async ({
       } while (fetched === limit);
     })
   );
+};
+
+export const createHorasObtenidasForSoloComida = async ({
+  user,
+  causa,
+  fechaObtencion
+}: CreateHorasObtenidasSoloComidaInput): Promise<HorasObtenidasRecord> => {
+  ensureHorasObtenidasConfig();
+  return databases.createDocument<HorasObtenidasRecord>(
+    appwriteConfig.databaseId,
+    appwriteConfig.horasObtenidasCollectionId,
+    ID.unique(),
+    {
+      user,
+      numeroHoras: HOURS_PER_SOLO_COMIDA,
+      causa,
+      fechaObtencion
+    }
+  );
+};
+
+export const deleteHorasObtenidasForSoloComida = async ({
+  user,
+  causa,
+  fechaObtencion
+}: DeleteHorasObtenidasSoloComidaInput): Promise<void> => {
+  ensureHorasObtenidasConfig();
+  const limit = 100;
+  let offset = 0;
+  let fetched = 0;
+
+  do {
+    const response = await databases.listDocuments<HorasObtenidasRecord>(
+      appwriteConfig.databaseId,
+      appwriteConfig.horasObtenidasCollectionId,
+      [
+        Query.equal("user", user),
+        Query.equal("causa", causa),
+        Query.equal("fechaObtencion", fechaObtencion),
+        Query.equal("numeroHoras", HOURS_PER_SOLO_COMIDA),
+        Query.limit(limit),
+        Query.offset(offset)
+      ]
+    );
+    fetched = response.documents.length;
+    offset += fetched;
+    await Promise.all(
+      response.documents.map((doc) =>
+        databases.deleteDocument(
+          appwriteConfig.databaseId,
+          appwriteConfig.horasObtenidasCollectionId,
+          doc.$id
+        )
+      )
+    );
+  } while (fetched === limit);
+};
+
+export const fetchHorasObtenidasForUser = async ({
+  user,
+  causa,
+  fechaObtencion,
+  numeroHoras
+}: FetchHorasObtenidasForUserInput): Promise<HorasObtenidasRecord[]> => {
+  ensureHorasObtenidasConfig();
+  const limit = 100;
+  let offset = 0;
+  let fetched = 0;
+  let allDocuments: HorasObtenidasRecord[] = [];
+
+  const queries = [Query.equal("user", user)];
+  if (causa) {
+    queries.push(Query.equal("causa", causa));
+  }
+  if (fechaObtencion) {
+    queries.push(Query.equal("fechaObtencion", fechaObtencion));
+  }
+  if (typeof numeroHoras === "number") {
+    queries.push(Query.equal("numeroHoras", numeroHoras));
+  }
+
+  do {
+    const response = await databases.listDocuments<HorasObtenidasRecord>(
+      appwriteConfig.databaseId,
+      appwriteConfig.horasObtenidasCollectionId,
+      [...queries, Query.limit(limit), Query.offset(offset)]
+    );
+    fetched = response.documents.length;
+    offset += fetched;
+    allDocuments = allDocuments.concat(response.documents);
+  } while (fetched === limit);
+
+  return allDocuments;
 };

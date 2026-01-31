@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.2.50
+- En "Mis eventos" se añade el botón "Solo comida" para eventos de tipo Comida, con modal de confirmación y opción de eliminarlo cuando está activo.
+- Al confirmar "Solo comida" se crea un registro en `horasObtenidas` con 2 horas y, al eliminarlo, se borra esa fila.
+- El cálculo de horas considera las activaciones de "Solo comida" para sumar 2 horas por cada registro.
+- Se consolida la versión de la app en `0.2.50`.
+
 ## v0.2.49
 - Se añade el botón "Eliminar evento" en el modal de edición, disponible solo para Admin, Boss y Eventmaster, que borra el evento completo y sus filas asociadas en `tabla` y `horasObtenidas`.
 - Se consolida la versión de la app en `0.2.49`.
