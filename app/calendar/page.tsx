@@ -77,6 +77,7 @@ const MONTH_NAMES = [
   "Diciembre"
 ];
 const HOURS_PER_EVENT = 3;
+const MEAL_EVENT_HOURS = 2;
 const MAX_DECLARABLE_HOURS = 7;
 const MAX_REASON_LENGTH = 200;
 const DECLARE_RANGE_START_MINUTES = 7 * 60 + 30;
@@ -102,8 +103,12 @@ const EVENT_NAME_DATE_FORMATTER = new Intl.DateTimeFormat("es-ES", {
   month: "2-digit",
   year: "numeric"
 });
-const isHoursGeneratingEvent = (eventType?: EventCategory | null) =>
-  eventType !== "Comida";
+const getEventHours = (event: Pick<CalendarEvent, "eventType" | "horasActivas">) => {
+  if (event.eventType === "Comida") {
+    return event.horasActivas ? MEAL_EVENT_HOURS : 0;
+  }
+  return HOURS_PER_EVENT;
+};
 
 type AutoEventNameParams = {
   eventType: EventCategory;
@@ -578,6 +583,7 @@ export default function CalendarPage() {
     establecimiento: string;
     certificacion: CertificationOption;
     promocion: string;
+    horasActivas: boolean;
   };
   type MyEventGroup = {
     event: CalendarEvent;
@@ -593,7 +599,8 @@ export default function CalendarPage() {
     notas: "",
     establecimiento: DEFAULT_ESTABLISHMENT,
     certificacion: DEFAULT_CERTIFICATION,
-    promocion: ""
+    promocion: "",
+    horasActivas: false
   });
   const [editMenuItems, setEditMenuItems] = useState<string[]>([]);
   const [editMenuSlots, setEditMenuSlots] = useState(0);
@@ -722,7 +729,8 @@ export default function CalendarPage() {
         notas: "",
         establecimiento: DEFAULT_ESTABLISHMENT,
         certificacion: DEFAULT_CERTIFICATION,
-        promocion: ""
+        promocion: "",
+        horasActivas: false
       });
       setEditMenuItems([]);
       setEditMenuSlots(0);
@@ -753,7 +761,8 @@ export default function CalendarPage() {
       notas: selectedEvent.notas ?? "",
       establecimiento: selectedEvent.establecimiento ?? "",
       certificacion: normalizedCertification,
-      promocion: selectedEvent.promocion ?? ""
+      promocion: selectedEvent.promocion ?? "",
+      horasActivas: Boolean(selectedEvent.horasActivas)
     });
     setEditMenuItems(menuItems);
     setEditMenuSlots(menuItems.length);
@@ -1553,32 +1562,33 @@ export default function CalendarPage() {
     return map;
   }, [sortedUsers]);
   const getUserColor = (value: string) => userColorMap.get(value) ?? DEFAULT_USER_COLOR;
-  const reportEventCounts = useMemo(() => {
-    const grouped = new Map<string, Set<string>>();
+  const reportEventHoursByUser = useMemo(() => {
+    const grouped = new Map<string, { attendees: Set<string>; hours: number }>();
     allEvents.forEach((eventItem) => {
       if (!eventItem.fecha) return;
-      if (!isHoursGeneratingEvent(eventItem.eventType)) return;
       const eventDate = parseDateWithoutTime(eventItem.fecha);
       if (!eventDate) return;
+      const hours = getEventHours(eventItem);
+      if (hours <= 0) return;
       const key = buildEventGroupKey(eventItem);
-      const attendees = grouped.get(key);
       const userLabel = eventItem.user?.trim();
       if (!userLabel) return;
-      if (attendees) {
-        attendees.add(userLabel);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.attendees.add(userLabel);
         return;
       }
-      grouped.set(key, new Set([userLabel]));
+      grouped.set(key, { attendees: new Set([userLabel]), hours });
     });
 
-    const counts = new Map<string, number>();
-    grouped.forEach((attendees) => {
+    const hoursByUser = new Map<string, number>();
+    grouped.forEach(({ attendees, hours }) => {
       attendees.forEach((user) => {
         if (!validUsernames.has(user)) return;
-        counts.set(user, (counts.get(user) ?? 0) + 1);
+        hoursByUser.set(user, (hoursByUser.get(user) ?? 0) + hours);
       });
     });
-    return counts;
+    return hoursByUser;
   }, [allEvents, validUsernames]);
   const reportActiveUsers = useMemo(() => {
     const selected = reportSelectedUsers.filter((user) => validUsernames.has(user));
@@ -1602,8 +1612,7 @@ export default function CalendarPage() {
   const reportUserSummaries = useMemo(
     () =>
       reportActiveUsers.map((user) => {
-        const eventCount = reportEventCounts.get(user) ?? 0;
-        const obtained = eventCount * HOURS_PER_EVENT;
+        const obtained = reportEventHoursByUser.get(user) ?? 0;
         const declared = reportDeclaredHoursByUser.get(user) ?? 0;
         const remaining = obtained - declared;
         return {
@@ -1613,7 +1622,7 @@ export default function CalendarPage() {
           remaining
         };
       }),
-    [reportActiveUsers, reportDeclaredHoursByUser, reportEventCounts]
+    [reportActiveUsers, reportDeclaredHoursByUser, reportEventHoursByUser]
   );
   const reportSummaryTotals = useMemo(
     () =>
@@ -1682,8 +1691,19 @@ export default function CalendarPage() {
         };
       });
   }, [reportActiveUserSet, reportDeclaredHoursRecords]);
+  const canEditSelectedEventDetails = useCallback(
+    (event: CalendarEventDisplay | null) => {
+      if (!event) return false;
+      if (userRole !== "User") return true;
+      if (!username) return false;
+      return myEventsOnly && event.eventType === "Comida" && event.user === username;
+    },
+    [myEventsOnly, userRole, username]
+  );
   const canCreateEvents = userRole !== "User";
-  const canEditDetails = userRole !== "User";
+  const canEditDetails = canEditSelectedEventDetails(selectedEvent);
+  const canEditEventType = userRole !== "User";
+  const canEditAttendees = userRole !== "User";
   const showControlTable = userRole === "Admin" || userRole === "Boss";
   const showReportHours = showControlTable;
   const canManageUsers = showControlTable;
@@ -2531,9 +2551,9 @@ export default function CalendarPage() {
     event.preventDefault();
     if (!selectedEvent) return;
 
-    const canEditDetails = userRole !== "User";
+    const canEditDetails = canEditSelectedEventDetails(selectedEvent);
     const trimmedName = editForm.nombre.trim();
-    const attendeeList = editForm.attendees;
+    const attendeeList = canEditAttendees ? editForm.attendees : selectedEvent.attendees;
     const selectedDateValue = canEditDetails
       ? parseDateInput(editForm.fecha)
       : parseDateWithoutTime(selectedEvent.fecha);
@@ -2549,6 +2569,7 @@ export default function CalendarPage() {
     );
     const selectedEventPromotion = selectedEvent.promocion?.trim() ?? "";
     const selectedEventMenu = selectedEvent.menu?.trim() ?? "";
+    const selectedEventHoursActive = Boolean(selectedEvent.horasActivas);
 
     if (!selectedDateValue) {
       setEditStatus({
@@ -2665,7 +2686,10 @@ export default function CalendarPage() {
             DEFAULT_CERTIFICATION
           : selectedEventCertification,
         promocion: canEditDetails ? editForm.promocion.trim() : selectedEventPromotion,
-        menu: canEditDetails ? serializeMenuItems(editMenuItems) : selectedEventMenu
+        menu: canEditDetails ? serializeMenuItems(editMenuItems) : selectedEventMenu,
+        horasActivas: canEditDetails
+          ? editForm.eventType === "Comida" && editForm.horasActivas
+          : selectedEventHoursActive
       };
 
       const groupedEvents = allEvents.filter(
@@ -2764,11 +2788,28 @@ export default function CalendarPage() {
   }, [allEvents, targetUser]);
 
   const myHoursEligibleEvents = useMemo(
-    () => myEvents.filter((group) => isHoursGeneratingEvent(group.event.eventType)),
+    () => myEvents.filter((group) => getEventHours(group.event) > 0),
+    [myEvents]
+  );
+  const myHoursStandardEventsCount = useMemo(
+    () =>
+      myEvents.filter((group) => group.event.eventType !== "Comida").length,
+    [myEvents]
+  );
+  const myHoursMealEventsCount = useMemo(
+    () =>
+      myEvents.filter(
+        (group) =>
+          group.event.eventType === "Comida" && Boolean(group.event.horasActivas)
+      ).length,
     [myEvents]
   );
   const obtainedHours = useMemo(
-    () => myHoursEligibleEvents.length * HOURS_PER_EVENT,
+    () =>
+      myHoursEligibleEvents.reduce(
+        (total, group) => total + getEventHours(group.event),
+        0
+      ),
     [myHoursEligibleEvents]
   );
 
@@ -3046,7 +3087,8 @@ export default function CalendarPage() {
                 <p className="mt-1 text-sm text-slate-500">
                   Recuento automático: cada evento asistido suma {HOURS_PER_EVENT}{" "}
                   horas y se guarda en el perfil del usuario seleccionado. Los eventos
-                  de tipo Comida no generan horas extra.
+                  de tipo Comida suman {MEAL_EVENT_HOURS} horas si activas la opción en
+                  su edición.
                 </p>
                 {targetUser ? (
                   <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-amber-500">
@@ -3132,8 +3174,23 @@ export default function CalendarPage() {
                   {formatHoursValue(hoursSummary.obtained)}
                 </p>
                 <p className="text-xs text-emerald-600/80">
-                  {myHoursEligibleEvents.length} eventos (sin Comida) × {HOURS_PER_EVENT}{" "}
-                  horas
+                  {myHoursEligibleEvents.length === 0 ? (
+                    <>Sin eventos con horas activas</>
+                  ) : (
+                    <>
+                      {myHoursStandardEventsCount > 0 ? (
+                        <>
+                          {myHoursStandardEventsCount} eventos × {HOURS_PER_EVENT} h
+                          {myHoursMealEventsCount > 0 ? " + " : ""}
+                        </>
+                      ) : null}
+                      {myHoursMealEventsCount > 0 ? (
+                        <>
+                          {myHoursMealEventsCount} comidas × {MEAL_EVENT_HOURS} h
+                        </>
+                      ) : null}
+                    </>
+                  )}
                 </p>
               </article>
               <article className="flex flex-col gap-2 rounded-2xl border border-sky-100 bg-sky-50/70 p-5">
@@ -3352,7 +3409,8 @@ export default function CalendarPage() {
                   Vista global con las horas obtenidas y declaradas de todos los usuarios.
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Los eventos de tipo Comida no generan horas extra.
+                  Los eventos de tipo Comida suman {MEAL_EVENT_HOURS} horas si están
+                  activados en su edición.
                 </p>
                 {reportSelectedUsers.length === 0 ? (
                   <p className="mt-1 text-xs text-slate-400">
@@ -5789,10 +5847,12 @@ export default function CalendarPage() {
                       onChange={(event) =>
                         setEditForm((prev) => ({
                           ...prev,
-                          eventType: event.target.value as EventCategory
+                          eventType: event.target.value as EventCategory,
+                          horasActivas:
+                            event.target.value === "Comida" ? prev.horasActivas : false
                         }))
                       }
-                      disabled={!canEditDetails}
+                      disabled={!canEditEventType}
                     >
                       {EVENT_CATEGORIES.map((category) => (
                         <option key={category} value={category}>
@@ -5801,6 +5861,35 @@ export default function CalendarPage() {
                       ))}
                     </select>
                   </label>
+                  {editForm.eventType === "Comida" ? (
+                    <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-600">
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-slate-700">
+                          Activar horas obtenidas
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          Esta comida sumará {MEAL_EVENT_HOURS}h si está activa.
+                        </span>
+                      </div>
+                      <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                          type="checkbox"
+                          className="peer sr-only"
+                          checked={editForm.horasActivas}
+                          onChange={(event) =>
+                            setEditForm((prev) => ({
+                              ...prev,
+                              horasActivas: event.target.checked
+                            }))
+                          }
+                          disabled={!canEditDetails}
+                        />
+                        <div className="h-6 w-11 rounded-full border border-slate-200 bg-white transition peer-checked:border-emerald-300 peer-checked:bg-emerald-500 peer-disabled:cursor-not-allowed peer-disabled:bg-slate-200">
+                          <div className="h-5 w-5 translate-x-0.5 rounded-full bg-white shadow-sm transition peer-checked:translate-x-[1.35rem]" />
+                        </div>
+                      </label>
+                    </div>
+                  ) : null}
                   <label className="flex flex-col gap-2 text-sm font-medium text-slate-600">
                     Fecha
                     <input
@@ -5862,7 +5951,7 @@ export default function CalendarPage() {
                                       type="button"
                                       onClick={() => handleAddAttendee(user.user, "edit")}
                                       className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                                      disabled={!canEditDetails}
+                                      disabled={!canEditAttendees}
                                     >
                                       <div className="flex flex-wrap items-center gap-2">
                                         <span
@@ -5896,7 +5985,7 @@ export default function CalendarPage() {
                                       onClick={() => handleRemoveAttendee(attendee, "edit")}
                                       className="flex items-center justify-between gap-3 disabled:cursor-not-allowed"
                                       aria-label={`Quitar ${attendee}`}
-                                      disabled={!canEditDetails}
+                                      disabled={!canEditAttendees}
                                     >
                                       <div className="flex flex-wrap items-center gap-2">
                                         <span
