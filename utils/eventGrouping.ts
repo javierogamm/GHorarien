@@ -17,6 +17,7 @@ export const buildEventGroupKey = (event: CalendarEvent) => {
     event.horaInicio ?? "",
     normalizeCertification(event.certificacion),
     normalizeText(event.promocion),
-    normalizeText(event.menu)
+    normalizeText(event.menu),
+    event.horasActivas ? "1" : "0"
   ].join("|");
 };
