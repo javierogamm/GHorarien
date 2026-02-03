@@ -1,9 +1,5 @@
 # Log de cambios
 
-## v0.2.51
-- Se normaliza el guardado de notas para aceptar fórmulas de section con espacios entre `condition`, `:` y `(`, evitando marcar como inválidos formatos como `condition : (` o `condition: (`.
-- Se consolida la versión de la app en `0.2.51`.
-
 ## v0.2.50
 - En "Mis eventos" se añade el botón "Solo comida" para eventos de tipo Comida, con modal de confirmación y opción de eliminarlo cuando está activo.
 - Al confirmar "Solo comida" se crea un registro en `horasObtenidas` con 2 horas y, al eliminarlo, se borra esa fila.
