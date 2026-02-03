@@ -65,6 +65,7 @@ import {
 } from "../../services/usersService";
 import { parseDateWithoutTime } from "../../utils/calendarDates";
 import { buildEventGroupKey } from "../../utils/eventGrouping";
+import { normalizeSectionConditionSpacing } from "../../utils/sectionFormula";
 import type { CalendarEventDisplay } from "../../components/calendarTypes";
 
 const SESSION_KEY = "calendar_user";
@@ -2332,7 +2333,7 @@ export default function CalendarPage() {
         horaInicio: formatDateTime(startDate),
         horaFin: formatDateTime(startDate),
         duration,
-        notas: eventNotes.trim(),
+        notas: normalizeSectionConditionSpacing(eventNotes.trim()),
         establecimiento: eventEstablishment,
         certificacion: normalizeCertification(eventCertificacion) || DEFAULT_CERTIFICATION,
         promocion: eventPromocion.trim(),
@@ -2499,7 +2500,7 @@ export default function CalendarPage() {
             horaInicio: isoDate,
             horaFin: isoDate,
             duration,
-            notas: bulkEventNotes.trim(),
+          notas: normalizeSectionConditionSpacing(bulkEventNotes.trim()),
             establecimiento: bulkEventEstablishment,
             certificacion:
               normalizeCertification(bulkEventCertificacion) || DEFAULT_CERTIFICATION,
@@ -2777,7 +2778,9 @@ export default function CalendarPage() {
         horaInicio: formatDateTime(startDate),
         horaFin: formatDateTime(startDate),
         duration: 0,
-        notas: canEditDetails ? editForm.notas.trim() : selectedEventNotes,
+        notas: canEditDetails
+          ? normalizeSectionConditionSpacing(editForm.notas.trim())
+          : selectedEventNotes,
         establecimiento: establishmentValue,
         certificacion: canEditDetails
           ? normalizeCertification(editForm.certificacion) ||
