@@ -2,6 +2,7 @@ import { ID, Models, Query } from "appwrite";
 import type { EventCategory } from "../constants/eventCategories";
 import { appwriteConfig, databases, ensureAppwriteConfig } from "./appwriteClient";
 import { createHorasObtenidasForAttendees } from "./horasObtenidasService";
+import { fetchUsers, normalizeUserRoleValue } from "./usersService";
 
 export type CalendarEvent = Models.Document & {
   eventType: EventCategory;
@@ -124,8 +125,16 @@ export const createEventsForAttendees = async ({
   );
 
   const createdEvents = await Promise.all(payloads);
+  const users = await fetchUsers();
+  const excludedHoursUsers = new Set(
+    users
+      .filter((user) => normalizeUserRoleValue(user.role) === "Otros")
+      .map((user) => user.user)
+  );
+  const hoursEligibleAttendees = attendees.filter((attendee) => !excludedHoursUsers.has(attendee));
+
   await createHorasObtenidasForAttendees({
-    attendees,
+    attendees: hoursEligibleAttendees,
     eventType,
     causa: nombre,
     fechaObtencion: fecha
