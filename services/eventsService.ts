@@ -17,6 +17,21 @@ export type CalendarEvent = Models.Document & {
   promocion?: string;
   menu?: string;
   importe?: number;
+  import?: number;
+};
+
+const normalizeEvent = (event: CalendarEvent): CalendarEvent => {
+  const backendImporte =
+    typeof event.importe === "number"
+      ? event.importe
+      : typeof event.import === "number"
+        ? event.import
+        : 0;
+
+  return {
+    ...event,
+    importe: backendImporte
+  };
 };
 
 export const fetchEventsForUser = async (
@@ -29,7 +44,7 @@ export const fetchEventsForUser = async (
     [Query.equal("user", username)]
   );
 
-  return response.documents;
+  return response.documents.map(normalizeEvent);
 };
 
 export const fetchAllEvents = async (): Promise<CalendarEvent[]> => {
@@ -46,7 +61,7 @@ export const fetchAllEvents = async (): Promise<CalendarEvent[]> => {
       [Query.limit(limit), Query.offset(offset)]
     );
     fetched = response.documents.length;
-    allDocuments = allDocuments.concat(response.documents);
+    allDocuments = allDocuments.concat(response.documents.map(normalizeEvent));
     offset += fetched;
   } while (fetched === limit);
 
@@ -103,7 +118,7 @@ export const createEventsForAttendees = async ({
         certificacion: certificacion ?? "",
         promocion: promocion ?? "",
         menu: menu ?? "",
-        importe: typeof importe === "number" ? importe : 0
+        import: typeof importe === "number" ? importe : 0
       }
     )
   );
@@ -116,7 +131,7 @@ export const createEventsForAttendees = async ({
     fechaObtencion: fecha
   });
 
-  return createdEvents;
+  return createdEvents.map(normalizeEvent);
 };
 
 export const updateEvent = async (
@@ -124,12 +139,23 @@ export const updateEvent = async (
   data: Partial<CalendarEvent>
 ): Promise<CalendarEvent> => {
   ensureAppwriteConfig();
-  return databases.updateDocument<CalendarEvent>(
+  const payload: Partial<CalendarEvent> = {
+    ...data
+  };
+
+  if (typeof data.importe === "number") {
+    payload.import = data.importe;
+    delete payload.importe;
+  }
+
+  const updatedEvent = await databases.updateDocument<CalendarEvent>(
     appwriteConfig.databaseId,
     appwriteConfig.eventsCollectionId,
     documentId,
-    data
+    payload
   );
+
+  return normalizeEvent(updatedEvent);
 };
 
 export const deleteEvent = async (documentId: string): Promise<void> => {
