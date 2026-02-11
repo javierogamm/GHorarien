@@ -1,5 +1,11 @@
 # Log de cambios
 
+## v0.2.53
+- Se corrige la persistencia del importe en Appwrite para que el payload use la columna real `import` de la colección `tabla`.
+- Se añade normalización de eventos para mapear `import` -> `importe` en cliente y mantener compatibilidad al leer/mostrar datos.
+- Se corrige la actualización de eventos para convertir `importe` al campo `import` antes de guardar, evitando el error 400 al editar.
+- Se consolida la versión de la app en `0.2.53`.
+
 ## v0.2.52
 - Se corrige la normalización de roles para que `admin`, `boss` y `eventmaster` se interpreten correctamente como **Admin**, **Boss** y **Eventmaster** en toda la app.
 - Se restablece la edición de eventos para los roles **Eventmaster**, **Boss** y **Admin**, incluso si el rol llega en minúsculas desde sesión o base de datos.
