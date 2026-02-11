@@ -1,13 +1,24 @@
-import { Models, Query } from "appwrite";
+import { ID, Models, Query } from "appwrite";
 import { appwriteConfig, databases, ensureAppwriteConfig } from "./appwriteClient";
 
-export type UserRole = "Admin" | "Boss" | "User" | "Eventmaster";
+export type UserRole = "Admin" | "Boss" | "User" | "Eventmaster" | "Otros";
 
 export type UserRecord = Models.Document & {
   user: string;
   pass: string;
   role: UserRole;
   horasObtenidas?: number | string;
+};
+
+export const normalizeUserRoleValue = (role?: string | null): UserRole | null => {
+  const normalized = role?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "admin") return "Admin";
+  if (normalized === "boss") return "Boss";
+  if (normalized === "eventmaster") return "Eventmaster";
+  if (normalized === "user") return "User";
+  if (normalized === "otros") return "Otros";
+  return null;
 };
 
 export const parseHorasObtenidas = (value: number | string | undefined): number => {
@@ -64,5 +75,25 @@ export const updateUserHorasObtenidas = async (
     appwriteConfig.usersCollectionId,
     documentId,
     { horasObtenidas: String(horasObtenidas) }
+  );
+};
+
+export const createOtherUser = async (name: string): Promise<UserRecord> => {
+  ensureAppwriteConfig();
+  const normalizedName = name.trim();
+  if (!normalizedName) {
+    throw new Error("El nombre es obligatorio.");
+  }
+
+  return databases.createDocument<UserRecord>(
+    appwriteConfig.databaseId,
+    appwriteConfig.usersCollectionId,
+    ID.unique(),
+    {
+      user: normalizedName,
+      pass: "",
+      role: "Otros",
+      horasObtenidas: "0"
+    }
   );
 };

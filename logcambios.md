@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.2.56
+- Se incorpora soporte para usuarios con rol **Otros** en la app (tipado, normalización y creación desde frontend).
+- En creación y edición de evento, para roles **Admin**, **Boss** y **Eventmaster**, se añade el botón **"Añadir otros"** debajo de asistentes.
+- El nuevo modal permite: seleccionar múltiples usuarios tipo Otros ya existentes y crear nuevos usuarios tipo Otros con solo nombre, añadiéndolos al evento sin cerrar el modal.
+- Los usuarios de tipo Otros **sí cuentan como asistentes del evento**, pero quedan excluidos del cómputo de horas obtenidas y del reporte horario.
+- Se consolida la versión de la app en `0.2.56`.
+
 ## v0.2.55
 - Se mantiene como vista por defecto de Importes el agrupado actual por restaurante (nivel 1), mes (nivel 2) y eventos.
 - Se añade un botón en Importes para alternar el nivel 1 del acordeón a **MES**; en este modo, el nivel 2 agrupa por restaurante y el nivel 3 lista eventos.

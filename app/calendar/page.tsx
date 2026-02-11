@@ -58,7 +58,9 @@ import {
   type HorasObtenidasRecord
 } from "../../services/horasObtenidasService";
 import {
+  createOtherUser,
   fetchUsers,
+  normalizeUserRoleValue,
   parseHorasObtenidas,
   type UserRecord,
   updateUserHorasObtenidas
@@ -118,13 +120,7 @@ const canDeleteEventsByRole = (role?: string | null) =>
 const canManageImportesByRole = (role?: string | null) =>
   role === "Admin" || role === "Boss" || role === "Eventmaster";
 const normalizeUserRole = (role?: string | null) => {
-  const normalized = role?.trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized === "admin") return "Admin";
-  if (normalized === "boss") return "Boss";
-  if (normalized === "eventmaster") return "Eventmaster";
-  if (normalized === "user") return "User";
-  return role?.trim() ?? null;
+  return normalizeUserRoleValue(role) ?? role?.trim() ?? null;
 };
 const buildSoloComidaKey = (causa: string, fechaObtencion: string) =>
   `${causa.trim()}|${fechaObtencion}`;
@@ -528,6 +524,14 @@ export default function CalendarPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState("");
+  const [isOtherUsersModalOpen, setIsOtherUsersModalOpen] = useState(false);
+  const [otherUsersTarget, setOtherUsersTarget] = useState<"create" | "edit" | null>(null);
+  const [otherUserName, setOtherUserName] = useState("");
+  const [otherUserStatus, setOtherUserStatus] = useState({
+    loading: false,
+    error: "",
+    success: ""
+  });
   const [userRole, setUserRole] = useState<string | null>(null);
   const normalizedUserRole = normalizeUserRole(userRole);
   const [calendarView, setCalendarView] = useState<"monthly" | "weekly">(
@@ -1813,20 +1817,37 @@ export default function CalendarPage() {
     });
     return map;
   }, [sortedUsers]);
+  const standardUsers = useMemo(
+    () => sortedUsers.filter((user) => normalizeUserRoleValue(user.role) !== "Otros"),
+    [sortedUsers]
+  );
+  const otherUsers = useMemo(
+    () => sortedUsers.filter((user) => normalizeUserRoleValue(user.role) === "Otros"),
+    [sortedUsers]
+  );
   const availableCreateUsers = useMemo(
-    () => sortedUsers.filter((user) => !attendees.includes(user.user)),
-    [attendees, sortedUsers]
+    () => standardUsers.filter((user) => !attendees.includes(user.user)),
+    [attendees, standardUsers]
   );
   const availableBulkUsers = useMemo(
-    () => sortedUsers.filter((user) => !bulkAttendees.includes(user.user)),
-    [bulkAttendees, sortedUsers]
+    () => standardUsers.filter((user) => !bulkAttendees.includes(user.user)),
+    [bulkAttendees, standardUsers]
   );
   const availableEditUsers = useMemo(
-    () => sortedUsers.filter((user) => !editForm.attendees.includes(user.user)),
-    [editForm.attendees, sortedUsers]
+    () => standardUsers.filter((user) => !editForm.attendees.includes(user.user)),
+    [editForm.attendees, standardUsers]
   );
   const validUsernames = useMemo(
     () => new Set(sortedUsers.map((user) => user.user)),
+    [sortedUsers]
+  );
+  const validHoursUsernames = useMemo(
+    () =>
+      new Set(
+        sortedUsers
+          .filter((user) => normalizeUserRoleValue(user.role) !== "Otros")
+          .map((user) => user.user)
+      ),
     [sortedUsers]
   );
   const userColorMap = useMemo(() => {
@@ -1858,12 +1879,12 @@ export default function CalendarPage() {
     const counts = new Map<string, number>();
     grouped.forEach((attendees) => {
       attendees.forEach((user) => {
-        if (!validUsernames.has(user)) return;
+        if (!validHoursUsernames.has(user)) return;
         counts.set(user, (counts.get(user) ?? 0) + 1);
       });
     });
     return counts;
-  }, [allEvents, validUsernames]);
+  }, [allEvents, validHoursUsernames]);
   const reportActiveUsers = useMemo(() => {
     const selected = reportSelectedUsers.filter((user) => validUsernames.has(user));
     if (selected.length > 0) return selected;
@@ -1966,8 +1987,8 @@ export default function CalendarPage() {
         };
       });
   }, [reportActiveUserSet, reportDeclaredHoursRecords]);
-  const canCreateEvents = normalizedUserRole !== "User";
-  const canEditDetails = normalizedUserRole !== "User";
+  const canCreateEvents = canManageImportesByRole(normalizedUserRole);
+  const canEditDetails = canManageImportesByRole(normalizedUserRole);
   const showControlTable = canManageImportesByRole(normalizedUserRole);
   const canManageImportes = canManageImportesByRole(normalizedUserRole);
   const showReportHours = normalizedUserRole === "Admin" || normalizedUserRole === "Boss";
@@ -2019,6 +2040,77 @@ export default function CalendarPage() {
     },
     [canAccessUserData, resolveViewOverride, triggerHoursRecalculation]
   );
+
+  const availableOtherCreateUsers = useMemo(
+    () => otherUsers.filter((user) => !attendees.includes(user.user)),
+    [attendees, otherUsers]
+  );
+  const availableOtherEditUsers = useMemo(
+    () => otherUsers.filter((user) => !editForm.attendees.includes(user.user)),
+    [editForm.attendees, otherUsers]
+  );
+
+  const openOtherUsersModal = (target: "create" | "edit") => {
+    if (!canManageImportesByRole(normalizedUserRole)) return;
+    setOtherUsersTarget(target);
+    setOtherUserName("");
+    setOtherUserStatus({ loading: false, error: "", success: "" });
+    setIsOtherUsersModalOpen(true);
+  };
+
+  const closeOtherUsersModal = () => {
+    setIsOtherUsersModalOpen(false);
+    setOtherUsersTarget(null);
+    setOtherUserName("");
+    setOtherUserStatus({ loading: false, error: "", success: "" });
+  };
+
+  const handleCreateOtherUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedName = otherUserName.trim();
+    if (!trimmedName) {
+      setOtherUserStatus({ loading: false, error: "Indica el nombre.", success: "" });
+      return;
+    }
+
+    const exists = users.some(
+      (user) => user.user.trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (exists) {
+      setOtherUserStatus({
+        loading: false,
+        error: "Ya existe un usuario con ese nombre.",
+        success: ""
+      });
+      return;
+    }
+
+    setOtherUserStatus({ loading: true, error: "", success: "" });
+    try {
+      const created = await createOtherUser(trimmedName);
+      setUsers((prev) => [...prev, created].sort((a, b) => a.user.localeCompare(b.user)));
+      if (otherUsersTarget) {
+        handleAddAttendee(created.user, otherUsersTarget);
+      }
+      setOtherUserName("");
+      setOtherUserStatus({
+        loading: false,
+        error: "",
+        success: `Usuario ${created.user} creado y añadido.`
+      });
+    } catch (error) {
+      setOtherUserStatus({
+        loading: false,
+        error: getErrorMessage(error, "No se pudo crear el usuario de tipo Otros."),
+        success: ""
+      });
+    }
+  };
+
+  const handleAddOtherUserFromModal = (value: string) => {
+    if (!otherUsersTarget) return;
+    handleAddAttendee(value, otherUsersTarget);
+  };
 
   const handleAddAttendee = (value: string, target: "create" | "edit" | "bulk") => {
     if (!validUsernames.has(value)) return;
@@ -5826,6 +5918,15 @@ export default function CalendarPage() {
                     <span className="text-xs font-semibold text-slate-400">
                       {attendees.length} seleccionados
                     </span>
+                    {canManageImportesByRole(normalizedUserRole) ? (
+                      <button
+                        type="button"
+                        onClick={() => openOtherUsersModal("create")}
+                        className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 transition hover:border-indigo-300 hover:bg-indigo-100"
+                      >
+                        Añadir otros
+                      </button>
+                    ) : null}
                   </div>
                   {usersError ? (
                     <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">
@@ -6577,6 +6678,16 @@ export default function CalendarPage() {
                       <span className="text-xs font-semibold text-slate-400">
                         {editForm.attendees.length} seleccionados
                       </span>
+                      {canManageImportesByRole(normalizedUserRole) ? (
+                        <button
+                          type="button"
+                          onClick={() => openOtherUsersModal("edit")}
+                          className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 transition hover:border-indigo-300 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={!canEditDetails}
+                        >
+                          Añadir otros
+                        </button>
+                      ) : null}
                     </div>
                     {usersError ? (
                       <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">
@@ -6848,6 +6959,101 @@ export default function CalendarPage() {
               </div>
             </form>
           ) : null}
+        </div>
+      </div>
+
+      <div
+        className={`fixed inset-0 z-[58] flex items-center justify-center bg-slate-900/40 px-4 py-10 backdrop-blur-sm transition ${
+          isOtherUsersModalOpen ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={closeOtherUsersModal}
+      >
+        <div
+          className={`max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-white/70 bg-white/95 p-6 shadow-soft transition ${
+            isOtherUsersModalOpen ? "translate-y-0 scale-100" : "translate-y-4 scale-95"
+          }`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Añadir usuarios tipo Otros</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Selecciona usuarios existentes o crea uno nuevo. No suman horas, pero sí cuentan como asistentes.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeOtherUsersModal}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+            >
+              Cerrar
+            </button>
+          </div>
+
+          <form className="mt-4 flex flex-col gap-2" onSubmit={handleCreateOtherUser}>
+            <label className="text-sm font-medium text-slate-600">
+              Nuevo usuario Otros
+              <input
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-400 focus:outline-none"
+                type="text"
+                value={otherUserName}
+                onChange={(event) => setOtherUserName(event.target.value)}
+                placeholder="Nombre"
+              />
+            </label>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={otherUserStatus.loading}
+                className="rounded-full border border-indigo-200 bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {otherUserStatus.loading ? "Creando..." : "Crear y añadir"}
+              </button>
+            </div>
+          </form>
+
+          {otherUserStatus.error ? (
+            <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-600">
+              {otherUserStatus.error}
+            </p>
+          ) : null}
+          {otherUserStatus.success ? (
+            <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+              {otherUserStatus.success}
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex flex-col gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Usuarios Otros disponibles
+            </span>
+            <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+              {(otherUsersTarget === "create" ? availableOtherCreateUsers : availableOtherEditUsers).length === 0 ? (
+                <p className="text-xs text-slate-400">No hay usuarios Otros disponibles.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {(otherUsersTarget === "create" ? availableOtherCreateUsers : availableOtherEditUsers).map((user) => {
+                    const color = getUserColor(user.user);
+                    return (
+                      <button
+                        key={user.$id}
+                        type="button"
+                        onClick={() => handleAddOtherUserFromModal(user.user)}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-indigo-300"
+                      >
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${color.badgeClass}`}
+                        >
+                          {user.user}
+                        </span>
+                        <span className="text-xs text-slate-400">Añadir</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
