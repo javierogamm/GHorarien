@@ -1,5 +1,12 @@
 # Log de cambios
 
+## v0.2.60
+- Se migra el cálculo de horas obtenidas y declaradas a **minutos** para todo el flujo funcional.
+- La visualización de tiempo en módulos de cálculo/reportes ahora usa formato `H:MMh` (ej.: `2:15h`, `2:45h`).
+- El modal de declaración permite declarar en pasos de **15 minutos** (inicio y fin), manteniendo la ventana diaria y el máximo de 7:00h.
+- Se añade para rol **Admin** el botón **"Recalcular horas (ADMIN)"**, que recorre eventos/asistentes y comidas con "solo comida" declarada, sincronizando la tabla `horasObtenidas` en minutos.
+- Se actualiza la consolidación de la app a la versión `0.2.60`.
+
 ## v0.2.59
 - Los usuarios con rol **User** ya pueden modificar asistentes de un evento existente desde el modal de edición, permitiendo añadirse a sí mismos o a otros usuarios sin habilitar la edición del resto de campos del evento.
 - Se mantiene la gestión avanzada de restaurantes para **Admin/Boss/Eventmaster** y se refuerza que los usuarios **User** puedan sugerir restaurantes desde la vista de **Restaurantes**.
